@@ -30,7 +30,7 @@ def render(
     total_tool_calls = sum(c.tool_call_count for c in conversations)
     total_cost = sum(c.estimated_cost_usd for c in conversations)
 
-    satisfaction_index = _compute_satisfaction(tone, interaction)
+    effectiveness_index = _compute_effectiveness(tone, interaction)
 
     tone_total = sentiment.get("polarity_distribution", {})
     tone_max = max(sum(tone_total.values()), 1)
@@ -52,7 +52,7 @@ def render(
         sentiment=sentiment,
         tone=tone,
         interaction=interaction,
-        satisfaction_index=satisfaction_index,
+        effectiveness_index=effectiveness_index,
         tone_max=tone_max,
         sources_data=sources_data,
         conversations_json=conversations_json,
@@ -68,24 +68,37 @@ def render(
     return out
 
 
-def _compute_satisfaction(tone: dict, interaction: dict) -> dict:
-    gfr = tone.get("gratitude_frustration_ratio", 0)
+def _compute_effectiveness(tone: dict, interaction: dict) -> dict:
+    """Combine agent-behaviour signals into a 0-100 effectiveness score."""
+    apology_r = tone.get("apology_rate", 0)
+    confidence_net = tone.get("confidence_net", 0)
+    helpfulness_r = tone.get("helpfulness_rate", 0)
+    self_correct_r = tone.get("self_correction_rate", 0)
     clean_exit = interaction.get("clean_exit_ratio", 0)
-    correction = interaction.get("correction_ratio", 0)
+    correction_r = interaction.get("correction_ratio", 0)
 
     score = 50.0
-    score += min(gfr * 15, 25)
+    # Apologising often signals the agent is flailing
+    score -= min(apology_r * 100, 20)
+    # Confidence is positive
+    score += min(confidence_net * 30, 15)
+    # Helpful stance is positive
+    score += min(helpfulness_r * 20, 10)
+    # Self-correction means the agent had to backtrack
+    score -= min(self_correct_r * 50, 15)
+    # Clean exits are good
     score += clean_exit * 20
-    score -= correction * 30
+    # User corrections are bad
+    score -= correction_r * 30
+
     score = max(0, min(100, score))
 
-    label = "neutral"
     if score >= 70:
-        label = "satisfied"
-    elif score >= 50:
-        label = "neutral"
+        label = "effective"
+    elif score >= 45:
+        label = "mixed"
     else:
-        label = "frustrated"
+        label = "struggling"
 
     return {
         "score": round(score, 1),
@@ -187,4 +200,8 @@ def _serialize_conversations(conversations: list[Conversation]) -> str:
             "started": conv.started_at.strftime("%Y-%m-%d %H:%M") if conv.started_at else "",
             "messages": msgs,
         }
-    return json.dumps(data, ensure_ascii=False)
+    json_str = json.dumps(data, ensure_ascii=False)
+    # Escape </ that would prematurely close the <script> tag.
+    # <\/ is a JS-safe escape that evaluates to </ at runtime.
+    json_str = json_str.replace('</', '<\\/')
+    return json_str
