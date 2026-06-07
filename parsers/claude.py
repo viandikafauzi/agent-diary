@@ -5,11 +5,15 @@ and the companion sessions-index.json for session-discovery metadata.
 
 Format reference:
   https://github.com/vade-app/tjsonl/blob/main/spec/transcript-schema-spec.md
+
+Discovery strategy:
+  1. Prefer sessions-index.json (fast path — metadata without reading transcripts).
+  2. When the index is missing (e.g. claude -p mode), fall back to scanning
+     .jsonl files directly, peeking at the first line's timestamp to decide
+     whether the session belongs to the target date.
 """
 
 import json
-import glob
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,30 +27,54 @@ def is_installed() -> bool:
 
 
 def extract(date_str: str) -> list[Conversation]:
-    target_date = _parse_date(date_str)
+    target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
     day_start = datetime(target_date.year, target_date.month, target_date.day, tzinfo=timezone.utc)
     day_end = datetime(target_date.year, target_date.month, target_date.day, 23, 59, 59, 999999, tzinfo=timezone.utc)
 
     conversations: list[Conversation] = []
+    seen: set[str] = set()
 
     for project_dir in _project_dirs():
         index = _load_index(project_dir)
-        matching_sessions = _find_sessions_for_date(index, day_start, day_end)
 
-        for sess in matching_sessions:
-            jsonl_path = sess.get("fullPath") or str(project_dir / f"{sess['sessionId']}.jsonl")
-            conv = _parse_session(jsonl_path, sess, day_start, day_end)
-            if conv:
-                conversations.append(conv)
+        if index:
+            # Fast path: filter via the index entries
+            for entry in index.get("entries", []):
+                sid = entry.get("sessionId", "")
+                if not sid or sid in seen:
+                    continue
+                ts = _entry_timestamp(entry)
+                if not ts or not (day_start <= ts <= day_end):
+                    continue
+                seen.add(sid)
+                jsonl_path = entry.get("fullPath") or str(project_dir / f"{sid}.jsonl")
+                conv = _parse_session(jsonl_path, entry, day_start, day_end)
+                if conv:
+                    conversations.append(conv)
+        else:
+            # Fallback: no index — scan .jsonl files directly, peek at first
+            # line timestamp to decide if the session belongs to this date.
+            for jsonl_file in sorted(project_dir.glob("*.jsonl")):
+                sid = jsonl_file.stem
+                if sid in seen:
+                    continue
+                first_line = _peek_first_line(jsonl_file)
+                if first_line is None:
+                    continue
+                ts = _parse_line_ts(first_line)
+                if not ts or not (day_start <= ts <= day_end):
+                    continue
+                seen.add(sid)
+                # Synthesize a minimal index entry for _parse_session
+                entry = {"sessionId": sid, "fullPath": str(jsonl_file)}
+                conv = _parse_session(str(jsonl_file), entry, day_start, day_end)
+                if conv:
+                    conversations.append(conv)
 
     return conversations
 
 
 # ── helpers ────────────────────────────────────────────────────────────
-
-def _parse_date(date_str: str) -> datetime.date:
-    return datetime.strptime(date_str, "%Y-%m-%d").date()
-
 
 def _project_dirs():
     """Yield Paths for every project subdirectory under ~/.claude/projects/."""
@@ -69,35 +97,18 @@ def _load_index(project_dir: Path) -> dict | None:
         return None
 
 
-def _find_sessions_for_date(
-    index: dict | None, day_start: datetime, day_end: datetime
-) -> list[dict]:
-    """Return index entries whose created/modified falls on the target date.
-
-    Falls back to scanning jsonl files if the index is missing.
-    """
-    results: list[dict] = []
-    seen: set[str] = set()
-
-    if index:
-        for entry in index.get("entries", []):
-            sid = entry.get("sessionId", "")
-            if not sid or sid in seen:
-                continue
-            ts = _entry_timestamp(entry)
-            if ts and day_start <= ts <= day_end:
-                seen.add(sid)
-                results.append(entry)
-        return results
-
-    # No index — scan all .jsonl files in the project dir (fallback)
-    # We can't get the project_dir from here, but the caller loops over
-    # project dirs and we'd need to pass it.  Actually, this function is
-    # called per project_dir, so we return results and let the caller
-    # handle scanning.  If index is None the caller should still try
-    # to scan.  We'll signal by returning an empty list and let the
-    # caller's broader loop handle fallback.
-    return results
+def _peek_first_line(path: Path) -> dict | None:
+    """Read only the first JSON line of a .jsonl file.  Returns None on failure."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for raw in f:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                return json.loads(raw)
+    except (json.JSONDecodeError, OSError):
+        return None
+    return None
 
 
 def _entry_timestamp(entry: dict) -> datetime | None:
@@ -105,10 +116,9 @@ def _entry_timestamp(entry: dict) -> datetime | None:
     for key in ("created", "modified"):
         raw = entry.get(key)
         if raw:
-            try:
-                return _parse_iso(raw)
-            except (ValueError, TypeError):
-                continue
+            ts = _parse_iso(raw)
+            if ts:
+                return ts
     return None
 
 
@@ -144,7 +154,7 @@ def _parse_session(
             end_reason = m.finish_reason
             break
 
-    # Cost: sum costUSD across assistant lines in the transcript
+    # Cost: sum costUSD across all lines in the transcript
     cost = _sum_cost(lines)
 
     return Conversation(
@@ -309,16 +319,18 @@ def _parse_line_ts(line: dict) -> datetime | None:
     raw = line.get("timestamp")
     if raw is None:
         return None
+    return _parse_iso(str(raw))
+
+
+def _parse_iso(ts_str: str) -> datetime | None:
+    """Parse ISO-8601 to UTC datetime.  Returns None on unparseable input."""
+    if not ts_str:
+        return None
     try:
-        return _parse_iso(str(raw))
+        ts_str = ts_str.replace("Z", "+00:00")
+        return datetime.fromisoformat(ts_str)
     except (ValueError, TypeError):
         return None
-
-
-def _parse_iso(ts_str: str) -> datetime:
-    """Parse ISO-8601 to UTC datetime."""
-    ts_str = ts_str.replace("Z", "+00:00")
-    return datetime.fromisoformat(ts_str)
 
 
 def _sum_cost(lines: list[dict]) -> float:
