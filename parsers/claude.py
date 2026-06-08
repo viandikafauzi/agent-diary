@@ -302,21 +302,35 @@ def _build_assistant_message(line: dict, ts: datetime) -> Message | None:
 def _build_user_messages(line: dict, ts: datetime) -> list[Message]:
     """Build user Message(s) from a 'user' jsonl line.
 
-    A user line may contain text blocks (typed by human) or tool_result
-    blocks (tool output injected into the transcript).  We emit one
-    Message per content block so tool results get distinct entries.
+    A user line may contain:
+    - content as a plain string (the human's typed message)
+    - content as a list of text blocks and/or tool_result blocks
+      (tool output injected into the transcript)
+
+    When content is a string we emit a single user Message.
+    When content is a list we emit one Message per content block so
+    tool results get distinct entries.
     """
     msg = line.get("message", {})
     if not isinstance(msg, dict):
         return []
 
-    content_blocks = msg.get("content", [])
-    if not isinstance(content_blocks, list):
-        content_blocks = []
+    raw_content = msg.get("content", "")
+
+    # Plain string → single user message (the common case for typed input)
+    if isinstance(raw_content, str):
+        text = raw_content.strip()
+        if text:
+            return [Message(role="user", content=text, timestamp=ts)]
+        return []
+
+    # List of content blocks
+    if not isinstance(raw_content, list):
+        return []
 
     messages: list[Message] = []
 
-    for block in content_blocks:
+    for block in raw_content:
         if not isinstance(block, dict):
             continue
         bt = block.get("type", "")
