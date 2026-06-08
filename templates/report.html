@@ -839,14 +839,23 @@ function openSession(id) {
     if (msg.tool) {
       html += '<span class="tool-info">' + msg.tool + '</span>';
     }
+    if (msg.tool_result_attr) {
+      html += '<span class="tool-info">from: ' + escapeHtml(msg.tool_result_attr) + '</span>';
+    }
     if (msg.finish_reason) {
       html += '<span class="tool-info">stop: ' + msg.finish_reason + '</span>';
     }
     html += '<span class="msg-ts">' + msg.ts + '</span>';
     html += '</div>';
+    var display = null;
     if (msg.content) {
-      var display = msg.content.length > 2000 ? msg.content.slice(0, 2000) + '\\n\\n[truncated \\u2014 ' + msg.content.length + ' chars]' : msg.content;
-      html += '<div class="msg-body">' + escapeHtml(display) + '</div>';
+      display = msg.content;
+    } else if (msg.tool) {
+      display = '[tool calls: ' + msg.tool + ']';
+    }
+    if (display) {
+      var truncated = display.length > 2000 ? display.slice(0, 2000) + '\\n\\n[truncated \\u2014 ' + display.length + ' chars]' : display;
+      html += '<div class="msg-body">' + escapeHtml(truncated) + '</div>';
     }
     html += '</div>';
   }

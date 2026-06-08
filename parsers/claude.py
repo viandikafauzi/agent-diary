@@ -318,6 +318,7 @@ def _build_user_messages(line: dict, ts: datetime) -> list[Message]:
                 role="toolResult",
                 content=str(result),
                 timestamp=ts,
+                tool_name=block.get("tool_use_id", ""),
             ))
 
     return messages

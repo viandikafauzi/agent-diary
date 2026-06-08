@@ -191,6 +191,7 @@ def _serialize_conversations(conversations: list[Conversation]) -> str:
                 "content": m.content,
                 "ts": ts_str,
                 "tool": tool_info,
+                "tool_result_attr": m.tool_name or "",
                 "finish_reason": m.finish_reason or "",
             })
         data[conv.id] = {
