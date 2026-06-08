@@ -64,6 +64,8 @@ if not found:
     for bt, cnt in block_types.most_common():
         print(f"  {bt}: {cnt}  sample={sample.get(bt,'')}")
 
+from collections import Counter
+
 print("\n=== How many messages of each role in a parsed conversation? ===")
 for d in sorted(proj_dir.iterdir()):
     if not d.is_dir():
