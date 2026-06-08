@@ -136,7 +136,10 @@ def _parse_session(
 ) -> Conversation | None:
     """Parse a single .jsonl transcript into a Conversation.
 
-    Only includes messages whose timestamp falls within [day_start, day_end].
+    The caller already decided this session is relevant via _peek_first_ts or
+    the index — so we include *all* messages regardless of timestamp, keeping
+    the conversation whole.  Filtering individual lines by a date window
+    silently drops user messages that are just outside the boundary.
     """
     path = Path(jsonl_path)
     if not path.exists():
@@ -148,7 +151,7 @@ def _parse_session(
 
     session_id = index_entry.get("sessionId", path.stem)
     model = _extract_model(lines)
-    messages = _build_messages(lines, day_start, day_end)
+    messages = _build_messages(lines)
     if not messages:
         return None
 
@@ -209,9 +212,13 @@ def _extract_model(lines: list[dict]) -> str | None:
 
 
 def _build_messages(
-    lines: list[dict], day_start: datetime, day_end: datetime
+    lines: list[dict], day_start: datetime | None = None, day_end: datetime | None = None
 ) -> list[Message]:
-    """Build Message objects from jsonl lines within the date window."""
+    """Build Message objects from jsonl lines.
+
+    When day_start/day_end are provided, lines outside that window are skipped.
+    Omit both to include all lines.
+    """
     messages: list[Message] = []
 
     for line in lines:
@@ -219,7 +226,7 @@ def _build_messages(
         ts = _parse_line_ts(line)
         if ts is None:
             continue
-        if ts < day_start or ts > day_end:
+        if day_start and day_end and (ts < day_start or ts > day_end):
             continue
 
         if ltype == "assistant":
