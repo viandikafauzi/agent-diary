@@ -57,14 +57,13 @@ def extract(date_str: str) -> list[Conversation]:
                 if conv:
                     conversations.append(conv)
         else:
-            # Fallback: no index — scan .jsonl files directly, searching
-            # for the first timestamped line to determine session date.
+            # Fallback: no index — scan .jsonl files directly, checking
+            # if any timestamp falls within the target date range.
             for jsonl_file in sorted(project_dir.glob("*.jsonl")):
                 sid = jsonl_file.stem
                 if sid in seen:
                     continue
-                ts = _peek_first_ts(jsonl_file)
-                if not ts or not (day_start <= ts <= day_end):
+                if not _has_activity_on_date(jsonl_file, day_start, day_end):
                     continue
                 seen.add(sid)
                 # Synthesize a minimal index entry for _parse_session
@@ -118,6 +117,26 @@ def _peek_first_ts(path: Path) -> datetime | None:
     except OSError:
         return None
     return None
+
+
+def _has_activity_on_date(path: Path, day_start: datetime, day_end: datetime) -> bool:
+    """Return True if any line in the file has a timestamp within [day_start, day_end]."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for raw in f:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    obj = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                ts = _parse_line_ts(obj)
+                if ts is not None and day_start <= ts <= day_end:
+                    return True
+    except OSError:
+        pass
+    return False
 
 
 def _entry_timestamp(entry: dict) -> datetime | None:
