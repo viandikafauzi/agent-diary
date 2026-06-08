@@ -47,7 +47,12 @@ def extract(date_str: str) -> list[Conversation]:
                 if not ts or not (day_start <= ts <= day_end):
                     continue
                 seen.add(sid)
-                jsonl_path = entry.get("fullPath") or str(project_dir / f"{sid}.jsonl")
+                raw_path = entry.get("fullPath", "")
+                if raw_path:
+                    p = Path(raw_path)
+                    jsonl_path = str(p) if p.is_absolute() else str(project_dir / p)
+                else:
+                    jsonl_path = str(project_dir / f"{sid}.jsonl")
                 conv = _parse_session(jsonl_path, entry, day_start, day_end)
                 if conv:
                     conversations.append(conv)
