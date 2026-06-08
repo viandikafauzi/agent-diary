@@ -1,45 +1,39 @@
 #!/usr/bin/env python3
-"""Diagnose Claude session data."""
+"""Diagnose Claude session data — show first 5 lines per file."""
 import json
 from pathlib import Path
 
 proj_dir = Path.home() / ".claude" / "projects"
-print("Projects dir exists:", proj_dir.is_dir())
-
-if not proj_dir.is_dir():
-    print("No ~/.claude/projects/ — is Claude Code installed?")
-    exit(1)
 
 for d in sorted(proj_dir.iterdir()):
     if not d.is_dir():
         continue
     print(f"\nProject: {d.name}")
-
-    # sessions-index.json
-    idx = d / "sessions-index.json"
-    if idx.exists():
-        data = json.loads(idx.read_text())
-        entries = data.get("entries", [])
-        print(f"  Index entries: {len(entries)}")
-        for e in entries[:5]:
-            sid = e.get("sessionId", "?")
-            fp = e.get("fullPath", "?")
-            cr = e.get("created", "?")
-            print(f"    sid={str(sid)[:30]}  fullPath={fp}  created={cr}")
-    else:
-        print("  No sessions-index.json")
-
-    # .jsonl files
-    jsonl_files = sorted(d.glob("*.jsonl"))
-    print(f"  JSONL files: {len(jsonl_files)}")
-    for f in jsonl_files[:5]:
-        try:
-            line1 = f.read_text().split("\n", 1)[0].strip()
-            obj = json.loads(line1)
-            ts = obj.get("timestamp", "?")
-            tp = obj.get("type", "?")
-            print(f"    {f.name}  type={tp}  ts={ts}")
-        except Exception as exc:
-            print(f"    {f.name}  ERROR: {exc}")
-
-print("\nDone.")
+    for f in sorted(d.glob("*.jsonl"))[:3]:
+        print(f"\n  --- {f.name} ---")
+        for i, raw in enumerate(f.read_text().split("\n")):
+            raw = raw.strip()
+            if not raw or i > 4:
+                if i > 4:
+                    print(f"  ... ({i} total lines read)")
+                break
+            try:
+                obj = json.loads(raw)
+                tp = obj.get("type", "?")
+                ts = obj.get("timestamp", "?")
+                if tp in ("assistant", "user"):
+                    msg = obj.get("message", {})
+                    content = msg.get("content", []) if isinstance(msg, dict) else []
+                    preview = ""
+                    if isinstance(content, list) and content:
+                        for c in content:
+                            if isinstance(c, dict) and c.get("type") == "text":
+                                preview = c.get("text", "")[:80]
+                                break
+                    print(f"  [{i}] type={tp}  ts={ts}  preview={preview}")
+                else:
+                    print(f"  [{i}] type={tp}  ts={ts}")
+            except:
+                pass
+    if len(list(d.glob("*.jsonl"))) > 3:
+        print(f"  ... ({len(list(d.glob('*.jsonl')))} total files)")
