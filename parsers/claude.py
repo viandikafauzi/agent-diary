@@ -57,16 +57,13 @@ def extract(date_str: str) -> list[Conversation]:
                 if conv:
                     conversations.append(conv)
         else:
-            # Fallback: no index — scan .jsonl files directly, peek at first
-            # line timestamp to decide if the session belongs to this date.
+            # Fallback: no index — scan .jsonl files directly, searching
+            # for the first timestamped line to determine session date.
             for jsonl_file in sorted(project_dir.glob("*.jsonl")):
                 sid = jsonl_file.stem
                 if sid in seen:
                     continue
-                first_line = _peek_first_line(jsonl_file)
-                if first_line is None:
-                    continue
-                ts = _parse_line_ts(first_line)
+                ts = _peek_first_ts(jsonl_file)
                 if not ts or not (day_start <= ts <= day_end):
                     continue
                 seen.add(sid)
@@ -102,16 +99,23 @@ def _load_index(project_dir: Path) -> dict | None:
         return None
 
 
-def _peek_first_line(path: Path) -> dict | None:
-    """Read only the first JSON line of a .jsonl file.  Returns None on failure."""
+def _peek_first_ts(path: Path) -> datetime | None:
+    """Read .jsonl lines until one with a timestamp field is found.
+    Returns the parsed timestamp, or None if no timestamped line exists."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             for raw in f:
                 raw = raw.strip()
                 if not raw:
                     continue
-                return json.loads(raw)
-    except (json.JSONDecodeError, OSError):
+                try:
+                    obj = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                ts = _parse_line_ts(obj)
+                if ts is not None:
+                    return ts
+    except OSError:
         return None
     return None
 
