@@ -15,10 +15,11 @@ Sentiment + interaction analysis of AI agent conversation logs. Generates a dark
 ## Quick Start
 
 ```bash
-# Install dependencies
+# Clone & set up
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Analyze today's conversations
+# Analyze today's conversations (NLTK data auto-downloaded on first run)
 python diary.py
 
 # Analyze a specific date

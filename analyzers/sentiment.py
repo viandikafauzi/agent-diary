@@ -1,9 +1,20 @@
+import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer
 from textblob import TextBlob
 from collections import Counter
 
 from parsers.base import Conversation, Message
 
+
+def _ensure_nltk_data():
+    for resource in ("vader_lexicon", "punkt", "punkt_tab", "averaged_perceptron_tagger"):
+        try:
+            nltk.data.find(resource)
+        except LookupError:
+            nltk.download(resource, quiet=True)
+
+
+_ensure_nltk_data()
 _sia = SentimentIntensityAnalyzer()
 
 
