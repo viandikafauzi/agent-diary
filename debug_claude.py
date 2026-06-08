@@ -1,67 +1,18 @@
 #!/usr/bin/env python3
-"""Diagnose Claude session data — dump raw user message structure."""
+"""Diagnose Claude — find user messages with text blocks, and assistant blocks."""
 import json
 from pathlib import Path
 
 proj_dir = Path.home() / ".claude" / "projects"
 
+print("=== Searching for USER messages with 'text' blocks ===")
+found = False
 for d in sorted(proj_dir.iterdir()):
-    if not d.is_dir():
+    if not d.is_dir() or found:
         continue
     for f in sorted(d.glob("*.jsonl")):
-        for raw in f.read_text().split("\n"):
-            raw = raw.strip()
-            if not raw:
-                continue
-            try:
-                obj = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
-            if obj.get("type") != "user":
-                continue
-            msg = obj.get("message", {})
-            content = msg.get("content", [])
-            if not content:
-                print(f"\nFile: {d.name}/{f.name}")
-                print(f"  type=user  ts={obj.get('timestamp','?')}")
-                print(f"  message keys: {list(msg.keys())}")
-                print(f"  message.content: {content}")
-                print(f"  userType: {obj.get('userType','?')}")
-                # Show full message dict (truncated)
-                msg_str = json.dumps(msg, indent=2, default=str)
-                print(f"  Full message:\n{msg_str[:800]}")
-                # Also show if there's text elsewhere in the line
-                for k, v in obj.items():
-                    if k not in ("message", "type", "sessionId", "uuid", "parentUuid", "timestamp", "cwd", "entrypoint", "gitBranch", "isSidechain", "userType", "version"):
-                        s = json.dumps(v, default=str)
-                        print(f"  extra field [{k}]: {s[:200]}")
-                exit(0)
-            
-            # Has content — show first block
-            for i, block in enumerate(content[:3]):
-                if isinstance(block, dict):
-                    bt = block.get("type", "?")
-                    if bt == "text":
-                        print(f"\nFile: {d.name}/{f.name}")
-                        print(f"  type=user  ts={obj.get('timestamp','?')}")
-                        print(f"  block[{i}] type={bt} text={block.get('text','')[:200]}")
-                        exit(0)
-                    else:
-                        print(f"\nFile: {d.name}/{f.name}")
-                        print(f"  type=user  ts={obj.get('timestamp','?')}")
-                        # Show raw content blocks
-                        for j, c in enumerate(content):
-                            if isinstance(c, dict):
-                                t = json.dumps(c, default=str)
-                                print(f"  block[{j}]: {t[:300]}")
-                        exit(0)
-
-print("No user messages with content found!")
-print("Looking at ANY user line...")
-for d in sorted(proj_dir.iterdir()):
-    if not d.is_dir():
-        continue
-    for f in sorted(d.glob("*.jsonl")):
+        if found:
+            break
         for raw in f.read_text().split("\n"):
             raw = raw.strip()
             if not raw:
@@ -70,8 +21,67 @@ for d in sorted(proj_dir.iterdir()):
                 obj = json.loads(raw)
             except:
                 continue
-            if obj.get("type") == "user":
-                obj_str = json.dumps(obj, indent=2, default=str)
-                print(f"\nFile: {d.name}/{f.name}")
-                print(obj_str[:1500])
-                exit(0)
+            if obj.get("type") != "user":
+                continue
+            msg = obj.get("message", {})
+            content = msg.get("content", [])
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    found = True
+                    print(f"File: {d.name}/{f.name}")
+                    print(f"  ts={obj.get('timestamp','?')}")
+                    print(f"  text={block.get('text','')[:300]}")
+                    break
+
+if not found:
+    print("NO user messages with text blocks found!")
+    print("\n=== Showing all block types in user messages ===")
+    from collections import Counter
+    block_types = Counter()
+    sample = {}
+    for d in sorted(proj_dir.iterdir()):
+        if not d.is_dir():
+            continue
+        for f in sorted(d.glob("*.jsonl")):
+            for raw in f.read_text().split("\n"):
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    obj = json.loads(raw)
+                except:
+                    continue
+                if obj.get("type") != "user":
+                    continue
+                msg = obj.get("message", {})
+                content = msg.get("content", [])
+                for block in content:
+                    if isinstance(block, dict):
+                        bt = block.get("type", "?")
+                        block_types[bt] += 1
+                        if bt not in sample:
+                            sample[bt] = json.dumps(block, default=str)[:200]
+    for bt, cnt in block_types.most_common():
+        print(f"  {bt}: {cnt}  sample={sample.get(bt,'')}")
+
+print("\n=== How many messages of each role in a parsed conversation? ===")
+for d in sorted(proj_dir.iterdir()):
+    if not d.is_dir():
+        continue
+    for f in sorted(d.glob("*.jsonl"))[:1]:
+        roles = Counter()
+        for raw in f.read_text().split("\n"):
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                obj = json.loads(raw)
+            except:
+                continue
+            tp = obj.get("type", "")
+            if tp in ("user", "assistant"):
+                msg = obj.get("message", {})
+                role = msg.get("role", "?")
+                roles[role] += 1
+        print(f"  {d.name}/{f.name}: {dict(roles)}")
+        break
