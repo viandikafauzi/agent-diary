@@ -37,6 +37,7 @@ def extract(date_str: str) -> list[Conversation]:
             continue
 
         tool_count = sum(1 for m in messages if m.tool_calls)
+        total_tokens = sum(m.token_count or 0 for m in messages)
         started = session_data["session_timestamp"]
 
         conversations.append(Conversation(
@@ -47,6 +48,7 @@ def extract(date_str: str) -> list[Conversation]:
             messages=messages,
             message_count=len(messages),
             tool_call_count=tool_count,
+            total_tokens=total_tokens,
         ))
 
     return conversations
@@ -133,6 +135,11 @@ def _build_messages(events: list[dict], default_model: str | None) -> list[Messa
 
         model = msg.get("model") or default_model
 
+        usage = msg.get("usage")
+        token_count = None
+        if isinstance(usage, dict):
+            token_count = usage.get("totalTokens")
+
         messages.append(Message(
             role=role,
             content=content,
@@ -140,6 +147,7 @@ def _build_messages(events: list[dict], default_model: str | None) -> list[Messa
             tool_calls=tool_calls,
             finish_reason=finish_reason,
             model=model,
+            token_count=token_count,
         ))
 
     return messages

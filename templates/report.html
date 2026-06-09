@@ -537,11 +537,6 @@ body {
 <div class="header">
   <h1>Agent Diary</h1>
   <div class="sub">{{ date }} &middot; generated {{ generated_at }}</div>
-  <div class="sources">
-    {% for src in sources %}
-    <span class="source-badge {{ src }}">{{ src }}</span>
-    {% endfor %}
-  </div>
 </div>
 
 {% if total_conversations == 0 %}
@@ -561,6 +556,23 @@ body {
   {% endfor %}
 </div>
 {% endif %}
+
+<!-- Per-source reactive aggregate sections -->
+{% for variant_key in ['all'] + sources_with_sessions %}
+{% set data = per_source_metrics[variant_key] %}
+{% if data %}
+<div class="section-group" data-filter-source="{{ variant_key }}"
+     style="display: {{ 'block' if variant_key == 'all' else 'none' }}">
+{% with
+    sentiment=data.sentiment,
+    tone=data.tone,
+    interaction=data.interaction,
+    effectiveness_index=data.effectiveness,
+    tone_max=data.tone_max,
+    total_conversations=data.totals.conversations,
+    total_messages=data.totals.messages,
+    sources_data=data.sources_data
+%}
 
 <!-- Summary Cards -->
 <div class="cards">
@@ -585,8 +597,8 @@ body {
 
   <div class="card">
     <div class="label">Conversations</div>
-    <div class="value">{{ total_conversations }}</div>
-    <div class="subtext">{{ total_messages }} messages</div>
+    <div class="value">{{ total_conversations|thousands }}</div>
+    <div class="subtext">{{ total_messages|thousands }} messages</div>
   </div>
 
   <div class="card">
@@ -608,7 +620,7 @@ body {
       <div class="bar-track">
         <div class="bar-fill {{ polarity }}" style="width: {{ pct | int }}%"></div>
       </div>
-      <span class="bar-value">{{ count }}</span>
+      <span class="bar-value">{{ count|thousands }}</span>
     </div>
     {% endfor %}
   </div>
@@ -621,31 +633,31 @@ body {
     <div class="metric">
       <div class="metric-label">Apology Rate</div>
       <div class="metric-value">{{ (tone.apology_rate * 100)|round }}%</div>
-      <div class="metric-detail">{{ tone.apology_count }} apologies in {{ tone.total_agent_messages }} messages</div>
+      <div class="metric-detail">{{ tone.apology_count|thousands }} apologies in {{ tone.total_agent_messages|thousands }} messages</div>
     </div>
     <div class="metric">
       <div class="metric-label">Confidence</div>
       <div class="metric-value">{{ "%.2f"|format(tone.confidence_net) }}</div>
-      <div class="metric-detail">{{ tone.confidence_count }} confident vs {{ tone.uncertainty_count }} uncertain markers</div>
+      <div class="metric-detail">{{ tone.confidence_count|thousands }} confident vs {{ tone.uncertainty_count|thousands }} uncertain markers</div>
     </div>
     <div class="metric">
       <div class="metric-label">Helpfulness</div>
       <div class="metric-value">{{ (tone.helpfulness_rate * 100)|round }}%</div>
-      <div class="metric-detail">{{ tone.helpfulness_count }} helpful markers</div>
+      <div class="metric-detail">{{ tone.helpfulness_count|thousands }} helpful markers</div>
     </div>
     <div class="metric">
       <div class="metric-label">Self-correction</div>
       <div class="metric-value">{{ (tone.self_correction_rate * 100)|round }}%</div>
-      <div class="metric-detail">{{ tone.self_correction_count }} backtrack markers</div>
+      <div class="metric-detail">{{ tone.self_correction_count|thousands }} backtrack markers</div>
     </div>
     <div class="metric">
       <div class="metric-label">Agent Questions</div>
       <div class="metric-value">{{ (tone.question_rate * 100)|round }}%</div>
-      <div class="metric-detail">{{ tone.question_count }} clarification questions asked</div>
+      <div class="metric-detail">{{ tone.question_count|thousands }} clarification questions asked</div>
     </div>
     <div class="metric">
       <div class="metric-label">Avg Response Length</div>
-      <div class="metric-value">{{ tone.avg_message_length }}</div>
+      <div class="metric-value">{{ tone.avg_message_length|thousands }}</div>
       <div class="metric-detail">chars per agent response</div>
     </div>
   </div>
@@ -657,8 +669,8 @@ body {
   <div class="metric-grid">
     <div class="metric">
       <div class="metric-label">Sessions</div>
-      <div class="metric-value">{{ interaction.total_sessions }}</div>
-      <div class="metric-detail">{{ interaction.clean_exits }} clean exits, {{ interaction.dangling_exits }} dangling</div>
+      <div class="metric-value">{{ interaction.total_sessions|thousands }}</div>
+      <div class="metric-detail">{{ interaction.clean_exits|thousands }} clean exits, {{ interaction.dangling_exits|thousands }} dangling</div>
     </div>
     <div class="metric">
       <div class="metric-label">Avg Turns</div>
@@ -668,12 +680,12 @@ body {
     <div class="metric">
       <div class="metric-label">Correction Rate</div>
       <div class="metric-value">{{ (interaction.correction_ratio * 100)|round }}%</div>
-      <div class="metric-detail">{{ interaction.total_corrections }} correction messages / {{ interaction.total_turns }} turns</div>
+      <div class="metric-detail">{{ interaction.total_corrections|thousands }} correction messages / {{ interaction.total_turns|thousands }} turns</div>
     </div>
     <div class="metric">
       <div class="metric-label">Clarification Rate</div>
       <div class="metric-value">{{ (interaction.clarification_ratio * 100)|round }}%</div>
-      <div class="metric-detail">{{ interaction.total_clarifications }} clarification questions / {{ interaction.total_turns }} turns</div>
+      <div class="metric-detail">{{ interaction.total_clarifications|thousands }} clarification questions / {{ interaction.total_turns|thousands }} turns</div>
     </div>
     <div class="metric">
       <div class="metric-label">Re-do Rate</div>
@@ -698,7 +710,7 @@ body {
         <th>Sessions</th>
         <th>Messages</th>
         <th>Tool Calls</th>
-        <th>Cost (USD)</th>
+        <th>Tokens</th>
         <th>Avg Tone</th>
       </tr>
     </thead>
@@ -706,12 +718,10 @@ body {
     {% for src, data in sources_data.items() %}
       <tr>
         <td><span class="source-badge {{ src }}">{{ src }}</span></td>
-        <td>{{ data.sessions }}</td>
-        <td>{{ data.messages }}</td>
-        <td>{{ data.tool_calls }}</td>
-        <td>
-          {% if data.cost > 0 %}${{ "%.4f"|format(data.cost) }}{% else %}$0.00{% endif %}
-        </td>
+        <td>{{ data.sessions|thousands }}</td>
+        <td>{{ data.messages|thousands }}</td>
+        <td>{{ data.tool_calls|thousands }}</td>
+        <td>{{ data.tokens|thousands }}</td>
         <td>
           {% if data.avg_tone is not none %}
             <span>{{ "%.2f"|format(data.avg_tone) }}</span>
@@ -724,6 +734,11 @@ body {
     </tbody>
   </table>
 </div>
+
+{% endwith %}
+</div>
+{% endif %}
+{% endfor %}
 
 <!-- Notable Conversations -->
 {% if notable.best or notable.worst %}
@@ -772,7 +787,7 @@ body {
 
 <!-- Session Details -->
 <div class="section">
-  <h2>All Sessions ({{ conversations|length }})</h2>
+  <h2>All Sessions ({{ conversations|length|thousands }})</h2>
   <div class="session-list">
     {% for conv in conversations %}
     {% set conv_sentiment = (sentiment.per_conversation | selectattr("id", "equalto", conv.id) | list) %}
@@ -792,9 +807,9 @@ body {
       </div>
       <div class="session-meta">
         <span>Model: {{ conv.model or 'unknown' }}</span>
-        <span>{{ conv.message_count }} msgs</span>
-        <span>{{ conv.tool_call_count }} tool calls</span>
-        <span>${{ "%.4f"|format(conv.estimated_cost_usd) }}</span>
+        <span>{{ conv.message_count|thousands }} msgs</span>
+        <span>{{ conv.tool_call_count|thousands }} tool calls</span>
+        <span>{{ conv.total_tokens|thousands }} tokens</span>
         <span>exit: {{ conv.end_reason or 'none' }}</span>
       </div>
     </div>
@@ -839,14 +854,23 @@ function openSession(id) {
     if (msg.tool) {
       html += '<span class="tool-info">' + msg.tool + '</span>';
     }
+    if (msg.tool_result_attr) {
+      html += '<span class="tool-info">from: ' + escapeHtml(msg.tool_result_attr) + '</span>';
+    }
     if (msg.finish_reason) {
       html += '<span class="tool-info">stop: ' + msg.finish_reason + '</span>';
     }
     html += '<span class="msg-ts">' + msg.ts + '</span>';
     html += '</div>';
+    var display = null;
     if (msg.content) {
-      var display = msg.content.length > 2000 ? msg.content.slice(0, 2000) + '\\n\\n[truncated \\u2014 ' + msg.content.length + ' chars]' : msg.content;
-      html += '<div class="msg-body">' + escapeHtml(display) + '</div>';
+      display = msg.content;
+    } else if (msg.tool) {
+      display = '[tool calls: ' + msg.tool + ']';
+    }
+    if (display) {
+      var truncated = display.length > 2000 ? display.slice(0, 2000) + '\\n\\n[truncated \\u2014 ' + display.length + ' chars]' : display;
+      html += '<div class="msg-body">' + escapeHtml(truncated) + '</div>';
     }
     html += '</div>';
   }
@@ -876,6 +900,12 @@ function setFilter(source) {
     } else {
       el.classList.add('hidden');
     }
+  });
+
+  // Toggle per-source aggregate section groups
+  var groups = document.querySelectorAll('.section-group');
+  groups.forEach(function(g) {
+    g.style.display = g.getAttribute('data-filter-source') === source ? 'block' : 'none';
   });
 
   // Also toggle empty-state visibility for section headers
