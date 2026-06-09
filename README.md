@@ -10,14 +10,16 @@ Sentiment + interaction analysis of AI agent conversation logs. Generates a dark
 |--------|----------|---------------|
 | **pi** | [pi](https://pi.dev) coding agent | `~/.pi/agent/sessions/*.jsonl` |
 | **hermes** | [Hermes](https://github.com/earendil-works/hermes) AI shell | `~/.hermes/state.db` |
+| **claude** | [Claude Code](https://code.claude.com) | `~/.claude/projects/*/sessions-index.json` + `.jsonl` |
 
 ## Quick Start
 
 ```bash
-# Install dependencies
+# Clone & set up
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Analyze today's conversations
+# Analyze today's conversations (NLTK data auto-downloaded on first run)
 python diary.py
 
 # Analyze a specific date
@@ -60,7 +62,8 @@ agent-diary/
 ├── parsers/              # Source-specific log extractors
 │   ├── base.py           # Conversation & Message dataclasses
 │   ├── pi.py             # Pi JSONL session parser
-│   └── hermes.py         # Hermes SQLite session parser
+│   ├── hermes.py         # Hermes SQLite session parser
+│   └── claude.py         # Claude Code JSONL transcript parser
 ├── analyzers/            # Analysis passes
 │   ├── sentiment.py      # VADER polarity + TextBlob subjectivity (agent messages)
 │   ├── tone.py           # Agent behaviour: apology, confidence, helpfulness, self-correction

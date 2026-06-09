@@ -67,6 +67,8 @@ def extract(date_str: str) -> list[Conversation]:
         started = datetime.fromtimestamp(s["started_at"], tz=timezone.utc) if s["started_at"] else None
         ended = datetime.fromtimestamp(s["ended_at"], tz=timezone.utc) if s["ended_at"] else None
 
+        total_tokens = sum(m.token_count or 0 for m in messages)
+
         conversations.append(Conversation(
             id=s["id"],
             source="hermes",
@@ -78,6 +80,7 @@ def extract(date_str: str) -> list[Conversation]:
             message_count=s["message_count"] or len(messages),
             tool_call_count=s["tool_call_count"] or 0,
             estimated_cost_usd=s["estimated_cost_usd"] or 0.0,
+            total_tokens=total_tokens,
         ))
 
     conn.close()
