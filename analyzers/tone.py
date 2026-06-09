@@ -1,75 +1,40 @@
-"""Agent-facing tone analysis using regex word-boundary matching.
+"""Agent-facing tone analysis using language-aware pattern matching.
 
 Every category targets agent (assistant) messages, not user messages.
 The diary is about the agent, so we measure what the agent expresses.
+
+Supports multiple languages via analyzers.lang_utils:
+- Per-language regex pattern tables (English, Indonesian)
+- Universal structural heuristics (emoji, punctuation, repeated chars)
+- Automatic language detection via langdetect
 """
 
 import re
 
 from parsers.base import Conversation, Message
-
-# ── Agent behaviour patterns ──────────────────────────────────────────
-# All patterns use raw regex with \b boundaries and \s+ for inter-word
-# whitespace.  Compiled once at module level.
-
-_APOLOGY = [
-    r"\bsorry\b", r"\bapologi[sz]e\b", r"\bmy\s+mistake\b", r"\bmy\s+fault\b",
-    r"\bI\s+was\s+wrong\b", r"\bI\s+apologi[sz]e\b", r"\bmy\s+bad\b",
-    r"\bthat\s+was\s+incorrect\b", r"\bI\s+messed\s+up\b",
-    r"\byou\s+are\s+right\b", r"\byou're\s+right\b", r"\bgood\s+catch\b",
-]
-
-_CONFIDENCE = [
-    r"\bdefinitely\b", r"\bcertainly\b", r"\bI\s+am\s+sure\b", r"\bI'm\s+sure\b",
-    r"\bclearly\b", r"\bobviously\b", r"\bwithout\s+doubt\b", r"\babsolutely\b",
-    r"\bindeed\b", r"\bexactly\b", r"\bprecisely\b", r"\bthat\s+is\s+correct\b",
-    r"\bthat's\s+correct\b", r"\bno\s+problem\b",
-]
-
-_UNCERTAINTY = [
-    r"\bmaybe\b", r"\bperhaps\b", r"\bI\s+think\b", r"\bnot\s+sure\b",
-    r"\bmight\s+be\b", r"\bcould\s+be\b", r"\bpossibly\b", r"\bprobably\b",
-    r"\bI\s+believe\b", r"\bit\s+seems\b", r"\bappears?\b", r"\bI\s+guess\b",
-    r"\bunsure\b", r"\bunclear\b", r"\bI\s+don't\s+know\b", r"\bI\s+dont\s+know\b",
-    r"\bI\s+would\s+guess\b", r"\bsounds?\s+like\b",
-]
-
-_HELPFULNESS = [
-    r"\blet\s+me\b", r"\bI\s+can\b", r"\bI'll\b", r"\bI\s+will\b",
-    r"\bhere's\b", r"\bhere\s+is\b", r"\byou\s+can\b", r"\bwould\s+you\s+like\b",
-    r"\blet's\b", r"\bI\s+recommend\b", r"\bI\s+suggest\b", r"\bfeel\s+free\b",
-    r"\bhappy\s+to\b", r"\bglad\s+to\b", r"\byou're\s+welcome\b",
-    r"\bI\s+will\s+help\b", r"\bI\s+can\s+help\b", r"\bhere\s+you\s+go\b",
-    r"\bdid\s+that\s+help\b", r"\bdoes\s+that\s+help\b",
-]
-
-_SELF_CORRECTION = [
-    r"\bactually\b", r"\bwait\b", r"\blet\s+me\s+reconsider\b",
-    r"\bon\s+second\s+thought\b", r"\brather\b", r"\bI\s+mean\b",
-    r"\bscratch\s+that\b", r"\blet\s+me\s+rephrase\b", r"\binstead\b",
-    r"\bcorrection\b", r"\bI\s+should\s+have\b",
-    r"\bthat's\s+not\s+right\b", r"\blet\s+me\s+fix\b", r"\bhold\s+on\b",
-    r"\bI\s+misread\b", r"\bI\s+misunderstood\b",
-]
-
-_AGENT_QUESTION = [
-    r"\bwhat\b", r"\bhow\b", r"\bwhy\b", r"\bwhen\b", r"\bwhere\b",
-    r"\bwho\b", r"\bwhich\b", r"\bcan\s+you\b", r"\bcould\s+you\b",
-    r"\bwould\s+you\b", r"\bdo\s+you\b", r"\bdoes\s+that\b",
-    r"\bis\s+that\b", r"\bare\s+you\b", r"\bshall\s+I\b",
-    r"\bwould\s+you\s+like\b", r"\bdo\s+you\s+want\b",
-]
-
-
-def _has_match(patterns: list[str], text: str) -> bool:
-    """Return True if *any* pattern matches *text* (at-most-once per message)."""
-    for p in patterns:
-        if re.search(p, text, re.IGNORECASE):
-            return True
-    return False
+from analyzers.lang_utils import (
+    detect_language,
+    get_tone_patterns,
+    match_tone_pattern,
+    has_question_mark,
+    has_exclamation,
+    has_emoji,
+    has_repeated_chars,
+    count_all_caps_words,
+)
 
 
 def analyze(conversations: list[Conversation]) -> dict:
+    # Detect language from assistant messages
+    agent_texts = []
+    for conv in conversations:
+        for m in conv.messages:
+            if m.role == "assistant" and m.content.strip():
+                agent_texts.append(m.content)
+
+    language = detect_language(agent_texts) if agent_texts else "en"
+    patterns = get_tone_patterns(language)
+
     total_agent_msgs = 0
     total_chars = 0
 
@@ -102,12 +67,52 @@ def analyze(conversations: list[Conversation]) -> dict:
             c_msgs += 1
             c_chars += len(txt)
 
-            if _has_match(_APOLOGY, lower):       c_apologies += 1
-            if _has_match(_CONFIDENCE, lower):     c_confidence += 1
-            if _has_match(_UNCERTAINTY, lower):    c_uncertainty += 1
-            if _has_match(_HELPFULNESS, lower):    c_helpfulness += 1
-            if _has_match(_SELF_CORRECTION, lower): c_self_corrections += 1
-            if _has_match(_AGENT_QUESTION, lower):  c_questions += 1
+            # Language-specific pattern matching
+            if match_tone_pattern(patterns, "apology", lower):
+                c_apologies += 1
+            # Also check universal apology emoji
+            elif has_emoji(txt, "apology"):
+                c_apologies += 1
+
+            if match_tone_pattern(patterns, "confidence", lower):
+                c_confidence += 1
+            elif has_emoji(txt, "confidence"):
+                c_confidence += 1
+
+            if match_tone_pattern(patterns, "uncertainty", lower):
+                c_uncertainty += 1
+            elif has_emoji(txt, "uncertainty"):
+                c_uncertainty += 1
+
+            if match_tone_pattern(patterns, "helpfulness", lower):
+                c_helpfulness += 1
+            elif has_emoji(txt, "helpfulness"):
+                c_helpfulness += 1
+
+            if match_tone_pattern(patterns, "self_correction", lower):
+                c_self_corrections += 1
+            elif has_emoji(txt, "self_correction"):
+                c_self_corrections += 1
+
+            # Agent questions: pattern match + universal question mark
+            if match_tone_pattern(patterns, "agent_question", lower):
+                c_questions += 1
+            elif has_question_mark(txt):
+                c_questions += 1
+            elif has_emoji(txt, "question"):
+                c_questions += 1
+
+            # Structural signals that supplement the above:
+            # - Exclamation marks can indicate confidence/excitement
+            if has_exclamation(txt) and not match_tone_pattern(patterns, "confidence", lower):
+                # Lightweight confidence signal (at most once per message)
+                if not has_emoji(txt, "uncertainty"):
+                    pass  # exclamation alone is weak, let patterns decide
+
+            # - Repeated chars can indicate emphasis (confidence or frustration)
+            if has_repeated_chars(txt):
+                # This signals emotional intensity but can't tell direction
+                pass  # too ambiguous to assign to a category
 
         total_agent_msgs += c_msgs
         total_chars += c_chars
@@ -121,6 +126,7 @@ def analyze(conversations: list[Conversation]) -> dict:
         per_conversation.append({
             "id": conv.id,
             "source": conv.source,
+            "language": language,
             "apologies": c_apologies,
             "confidence": c_confidence,
             "uncertainty": c_uncertainty,
@@ -135,6 +141,7 @@ def analyze(conversations: list[Conversation]) -> dict:
     confidence_net = round((total_confidence - total_uncertainty) / n, 3)
 
     return {
+        "language": language,
         "apology_count": total_apologies,
         "apology_rate": round(total_apologies / n, 3),
         "confidence_count": total_confidence,
