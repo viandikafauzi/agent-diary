@@ -45,3 +45,6 @@ class Conversation:
     tool_call_count: int = 0
     estimated_cost_usd: float = 0.0
     total_tokens: int = 0
+    tokens_input: int = 0
+    tokens_output: int = 0
+    tokens_reasoning: int = 0

@@ -84,6 +84,9 @@ def extract(date_str: str) -> list[Conversation]:
                     tool_call_count=tool_call_count,
                     estimated_cost_usd=s["cost"] or 0.0,
                     total_tokens=total_tokens,
+                    tokens_input=s["tokens_input"] or 0,
+                    tokens_output=s["tokens_output"] or 0,
+                    tokens_reasoning=s["tokens_reasoning"] or 0,
                 )
             )
 
