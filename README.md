@@ -11,6 +11,7 @@ Sentiment + interaction analysis of AI agent conversation logs. Generates a dark
 | **pi** | [pi](https://pi.dev) coding agent | `~/.pi/agent/sessions/*.jsonl` |
 | **hermes** | [Hermes](https://github.com/earendil-works/hermes) AI shell | `~/.hermes/state.db` |
 | **claude** | [Claude Code](https://code.claude.com) | `~/.claude/projects/*/sessions-index.json` + `.jsonl` |
+| **opencode** | [OpenCode](https://opencode.ai) | `~/.local/share/opencode/opencode.db` |
 
 ## Quick Start
 
@@ -37,8 +38,8 @@ python diary.py --date 2026-05-31 --output my-report.html
 1. **Parsers** extract conversation logs from each AI CLI's local storage.
 2. **Analyzers** run three passes over the data:
    - **Sentiment** — NLTK VADER polarity + TextBlob subjectivity on agent (assistant) messages — what the agent expresses.
-   - **Behavior** — Regex word-boundary matching on agent messages for apology, confidence, uncertainty, helpfulness, self-correction, and clarification questions.
-   - **Interaction** — Session quality metrics: correction rate, clarification rate, re-do rate, exit quality.
+   - **Behavior** — Regex word-boundary matching on agent messages for apology, confidence, uncertainty, helpfulness, self-correction, and clarification questions. Supports **multiple languages** (English + Indonesian) with automatic language detection via `langdetect`, plus universal character-level heuristics (emoji, punctuation, repeated chars) as fallback.
+   - **Interaction** — Session quality metrics: correction rate, clarification rate, re-do rate, exit quality. Also language-aware with per-language pattern tables.
 3. **Reporters** render an interactive HTML dashboard.
 
 ## HTML Report Features
@@ -58,13 +59,15 @@ python diary.py --date 2026-05-31 --output my-report.html
 ```
 agent-diary/
 ├── diary.py              # Main entry point
-├── requirements.txt      # Python dependencies (nltk, jinja2)
+├── requirements.txt      # Python dependencies
 ├── parsers/              # Source-specific log extractors
 │   ├── base.py           # Conversation & Message dataclasses
 │   ├── pi.py             # Pi JSONL session parser
 │   ├── hermes.py         # Hermes SQLite session parser
-│   └── claude.py         # Claude Code JSONL transcript parser
+│   ├── claude.py         # Claude Code JSONL transcript parser
+│   └── opencode.py       # OpenCode SQLite session parser
 ├── analyzers/            # Analysis passes
+│   ├── lang_utils.py     # Language detection + per-language pattern tables (en, id)
 │   ├── sentiment.py      # VADER polarity + TextBlob subjectivity (agent messages)
 │   ├── tone.py           # Agent behaviour: apology, confidence, helpfulness, self-correction
 │   └── interaction.py    # Clarification/correction/exit quality
@@ -82,6 +85,25 @@ agent-diary/
 - `nltk` ≥ 3.9
 - `jinja2` ≥ 3.1
 - `textblob` ≥ 0.17
+- `langdetect` ≥ 1.0.9 (optional — enables automatic language detection for multilingual tone analysis; falls back to English patterns)
+
+## Multilingual Support
+
+The tone and interaction analyzers now support **multiple languages**:
+
+| Language | Code | Tone Patterns | Interaction Patterns |
+|----------|------|---------------|---------------------|
+| English  | `en` | ✅ Full set   | ✅ Full set         |
+| Indonesian | `id` | ✅ Full set | ✅ Full set         |
+| Malay    | `ms` | Inherits `id` | Inherits `id`       |
+
+**How it works:**
+1. Message text is sampled and language-detected via `langdetect`
+2. The appropriate per-language pattern table is selected (bagian word-boundary regex for tone, substring matching for interaction)
+3. Universal **structural heuristics** (question marks, exclamation marks, emoji, repeated characters) complement the patterns — these work for any language
+4. If `langdetect` is not installed, or the language is unsupported, the system falls back to English patterns + structural heuristics
+
+To add a new language, edit `analyzers/lang_utils.py` and add entries to `LANGUAGE_TONE_PATTERNS` and `LANGUAGE_INTERACTION_PATTERNS`.
 
 ## License
 

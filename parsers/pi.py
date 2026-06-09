@@ -28,12 +28,14 @@ def extract(date_str: str) -> list[Conversation]:
         if session_ts < day_start or session_ts > day_end:
             continue
 
-        messages = _build_messages(session_data["events"], session_data["model"])
+        messages, tokens_input, tokens_output = _build_messages(session_data["events"], session_data["model"])
         if not messages:
             continue
 
         tool_count = sum(1 for m in messages if m.tool_calls)
-        total_tokens = sum(m.token_count or 0 for m in messages)
+        # pi's usage.totalTokens is cumulative per message, so we compute
+        # total from per-message input + output instead.
+        total_tokens = tokens_input + tokens_output
         started = session_data["session_timestamp"]
         ended = messages[-1].timestamp
 
@@ -47,6 +49,8 @@ def extract(date_str: str) -> list[Conversation]:
             message_count=len(messages),
             tool_call_count=tool_count,
             total_tokens=total_tokens,
+            tokens_input=tokens_input,
+            tokens_output=tokens_output,
         ))
 
     return conversations
@@ -93,8 +97,15 @@ def _parse_jsonl(filepath: Path) -> dict | None:
     }
 
 
-def _build_messages(events: list[dict], default_model: str | None) -> list[Message]:
+def _build_messages(events: list[dict], default_model: str | None) -> tuple[list[Message], int, int]:
+    """Build Message objects and accumulate input/output token counts.
+
+    Returns (messages, tokens_input_total, tokens_output_total).
+    """
     messages = []
+    tokens_input = 0
+    tokens_output = 0
+
     for evt in events:
         msg = evt.get("message", evt)
         role = msg.get("role", "")
@@ -137,6 +148,8 @@ def _build_messages(events: list[dict], default_model: str | None) -> list[Messa
         token_count = None
         if isinstance(usage, dict):
             token_count = usage.get("totalTokens")
+            tokens_input += usage.get("input", 0) or 0
+            tokens_output += usage.get("output", 0) or 0
 
         messages.append(Message(
             role=role,
@@ -148,5 +161,5 @@ def _build_messages(events: list[dict], default_model: str | None) -> list[Messa
             token_count=token_count,
         ))
 
-    return messages
+    return messages, tokens_input, tokens_output
 
