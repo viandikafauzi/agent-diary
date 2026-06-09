@@ -187,6 +187,7 @@ def _parse_session(
 
     # Cost: sum costUSD across all lines in the transcript
     cost = _sum_cost(lines)
+    tokens = _sum_tokens(lines)
 
     return Conversation(
         id=session_id,
@@ -199,6 +200,7 @@ def _parse_session(
         message_count=len(messages),
         tool_call_count=tool_calls,
         estimated_cost_usd=cost,
+        total_tokens=tokens,
     )
 
 
@@ -391,3 +393,28 @@ def _sum_cost(lines: list[dict]) -> float:
         if isinstance(cost, (int, float)):
             total += float(cost)
     return round(total, 6)
+
+
+def _sum_tokens(lines: list[dict]) -> int:
+    """Sum unique output+input tokens from assistant usage.iterations."""
+    seen = set()
+    total = 0
+    for line in lines:
+        if line.get("type") == "assistant":
+            msg = line.get("message", {})
+            if isinstance(msg, dict):
+                usage = msg.get("usage")
+                if isinstance(usage, dict):
+                    iterations = usage.get("iterations")
+                    if not isinstance(iterations, list):
+                        continue
+                    for it in iterations:
+                        if not isinstance(it, dict):
+                            continue
+                        inp = it.get("input_tokens", 0) or 0
+                        out = it.get("output_tokens", 0) or 0
+                        key = (inp, out)
+                        if key not in seen:
+                            seen.add(key)
+                            total += inp + out
+    return total

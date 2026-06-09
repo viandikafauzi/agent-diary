@@ -4,12 +4,28 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
+from analyzers.interaction import analyze as analyze_interaction
+from analyzers.sentiment import analyze as analyze_sentiment
+from analyzers.tone import analyze as analyze_tone
 from parsers.base import Conversation
 
 
 TEMPLATE_DIR = Path(__file__).parent.parent / "templates"
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 _env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)), autoescape=True)
+
+
+def _thousands(n: int) -> str:
+    """Format integer with dots as thousand separators (e.g. 180469 -> '180.469')."""
+    s = str(int(n))
+    parts = []
+    while s:
+        parts.append(s[-3:])
+        s = s[:-3]
+    return ".".join(reversed(parts))
+
+
+_env.filters["thousands"] = _thousands
 
 
 def render(
@@ -28,7 +44,7 @@ def render(
     total_conversations = len(conversations)
     total_messages = sum(c.message_count for c in conversations)
     total_tool_calls = sum(c.tool_call_count for c in conversations)
-    total_cost = sum(c.estimated_cost_usd for c in conversations)
+    total_tokens = sum(c.total_tokens for c in conversations)
 
     effectiveness_index = _compute_effectiveness(tone, interaction)
 
@@ -39,6 +55,7 @@ def render(
     conversations_json = _serialize_conversations(conversations)
 
     sources_with_sessions = sorted(set(c.source for c in conversations))
+    per_source_metrics = _compute_per_source_metrics(conversations, sources_with_sessions)
 
     html = template.render(
         date=date_str,
@@ -48,7 +65,7 @@ def render(
         total_conversations=total_conversations,
         total_messages=total_messages,
         total_tool_calls=total_tool_calls,
-        total_cost=round(total_cost, 4),
+        total_tokens=total_tokens,
         sentiment=sentiment,
         tone=tone,
         interaction=interaction,
@@ -58,6 +75,7 @@ def render(
         conversations_json=conversations_json,
         notable=notable,
         conversations=conversations,
+        per_source_metrics=per_source_metrics,
     )
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -144,6 +162,45 @@ def _find_notable(conversations: list, sentiment: dict) -> dict:
     return {"best": best_details, "worst": worst_details}
 
 
+def _bundle(sentiment, tone, interaction, conversations):
+    effectiveness = _compute_effectiveness(tone, interaction)
+    tone_dist = sentiment.get("polarity_distribution", {})
+    tone_max_val = max(sum(tone_dist.values()), 1)
+    return {
+        "sentiment": sentiment,
+        "tone": tone,
+        "interaction": interaction,
+        "effectiveness": effectiveness,
+        "tone_max": tone_max_val,
+        "sources_data": _build_sources_data(conversations, sentiment),
+        "totals": {
+            "conversations": len(conversations),
+            "messages": sum(c.message_count for c in conversations),
+            "tool_calls": sum(c.tool_call_count for c in conversations),
+            "tokens": sum(c.total_tokens for c in conversations),
+        },
+    }
+
+
+def _compute_per_source_metrics(conversations, sources_with_sessions):
+    all_sent = analyze_sentiment(conversations)
+    all_tone = analyze_tone(conversations)
+    all_interaction = analyze_interaction(conversations)
+
+    result = {"all": _bundle(all_sent, all_tone, all_interaction, conversations)}
+
+    for src in sources_with_sessions:
+        src_convs = [c for c in conversations if c.source == src]
+        if not src_convs:
+            continue
+        sent = analyze_sentiment(src_convs)
+        tone = analyze_tone(src_convs)
+        interaction = analyze_interaction(src_convs)
+        result[src] = _bundle(sent, tone, interaction, src_convs)
+
+    return result
+
+
 def _get_preview(conv) -> str:
     for m in conv.messages:
         if m.role == "user" and m.content.strip():
@@ -157,11 +214,11 @@ def _build_sources_data(conversations: list, sentiment: dict) -> dict:
     for conv in conversations:
         src = conv.source
         if src not in data:
-            data[src] = {"sessions": 0, "messages": 0, "tool_calls": 0, "cost": 0.0, "tone_scores": []}
+            data[src] = {"sessions": 0, "messages": 0, "tool_calls": 0, "tokens": 0, "tone_scores": []}
         data[src]["sessions"] += 1
         data[src]["messages"] += conv.message_count
         data[src]["tool_calls"] += conv.tool_call_count
-        data[src]["cost"] += conv.estimated_cost_usd
+        data[src]["tokens"] += conv.total_tokens
 
     for s in sentiment.get("per_conversation", []):
         src = s.get("source", "")
@@ -171,7 +228,6 @@ def _build_sources_data(conversations: list, sentiment: dict) -> dict:
     for src in data:
         scores = data[src]["tone_scores"]
         data[src]["avg_tone"] = round(sum(scores) / len(scores), 2) if scores else None
-        data[src]["cost"] = round(data[src]["cost"], 4)
 
     return data
 

@@ -27,3 +27,4 @@ class Conversation:
     message_count: int = 0
     tool_call_count: int = 0
     estimated_cost_usd: float = 0.0
+    total_tokens: int = 0
