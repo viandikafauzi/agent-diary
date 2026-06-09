@@ -1,29 +1,37 @@
+"""Interaction quality analysis with multilingual support.
+
+Measures session-level quality metrics:
+- Correction rate (user pushback)
+- Clarification rate (agent asking for clarity)
+- Re-do rate (repeated tool calls)
+- Exit quality (clean vs dangling)
+
+Uses per-language pattern tables from analyzers.lang_utils
+plus universal structural heuristics.
+"""
+
 from parsers.base import Conversation, Message
-
-NEGATION_TRIGGERS = [
-    "wrong", "nope", "incorrect", "actually", "i meant",
-    "what i meant", "that's not", "don't do", "do not",
-    "shouldn't", "should not", "try again", "redo", "re-do",
-    "not yet", "not what i", "not correct", "not working",
-    "doesn't work", "didn't work", "still broken", "not right",
-]
-
-EXIT_POSITIVE = [
-    "thanks", "thank", "perfect", "great", "goodbye", "bye", "done",
-    "that's all", "all good", "resolved", "/exit",
-]
-
-CLARIFICATION_QUESTION_MARKERS = [
-    "what do you mean", "can you clarify", "could you clarify",
-    "do you mean", "are you saying", "do you want me to",
-    "would you like me to", "to confirm", "just to be clear",
-    "let me make sure", "so you want", "is this what you",
-    "am i understanding", "to clarify", "which one",
-    "did you mean", "let me know if",
-]
+from analyzers.lang_utils import (
+    detect_language,
+    get_interaction_patterns,
+    match_interaction_pattern,
+    has_emoji,
+    has_question_mark,
+    has_exclamation,
+)
 
 
 def analyze(conversations: list[Conversation]) -> dict:
+    # Detect language from user + assistant messages for interaction context
+    all_texts = []
+    for conv in conversations:
+        for m in conv.messages:
+            if m.content.strip():
+                all_texts.append(m.content)
+
+    language = detect_language(all_texts) if all_texts else "en"
+    patterns = get_interaction_patterns(language)
+
     per_conversation = []
     total_turns = 0
     total_clarifications = 0
@@ -39,19 +47,12 @@ def analyze(conversations: list[Conversation]) -> dict:
         assistant_msgs = [m for m in conv.messages if m.role == "assistant"]
         turns = len(user_msgs)
 
-        clarifications = 0
-        for m in assistant_msgs:
-            txt = m.content.lower().strip() if m.content else ""
-            if not txt:
-                continue
-            if any(marker in txt for marker in CLARIFICATION_QUESTION_MARKERS):
-                clarifications += 1
-
-        corrections = _count_corrections(user_msgs)
+        clarifications = _count_clarifications(assistant_msgs, patterns)
+        corrections = _count_corrections(user_msgs, patterns)
 
         redo_count = _count_redos(conv.messages)
 
-        exit_quality, exit_reason = _classify_exit(conv, user_msgs)
+        exit_quality, exit_reason = _classify_exit(conv, user_msgs, patterns)
 
         if exit_quality == "clean":
             clean_exits += 1
@@ -68,6 +69,7 @@ def analyze(conversations: list[Conversation]) -> dict:
             "id": conv.id,
             "source": conv.source,
             "model": conv.model,
+            "language": language,
             "turns": turns,
             "clarifications": clarifications,
             "corrections": corrections,
@@ -85,6 +87,7 @@ def analyze(conversations: list[Conversation]) -> dict:
     clean_exit_ratio = round(clean_exits / total_sessions, 2) if total_sessions else 0
 
     return {
+        "language": language,
         "total_sessions": total_sessions,
         "total_turns": total_turns,
         "avg_turns_per_session": avg_turns,
@@ -100,16 +103,47 @@ def analyze(conversations: list[Conversation]) -> dict:
     }
 
 
-def _count_corrections(user_msgs: list[Message]) -> int:
+def _count_corrections(user_msgs: list[Message], patterns: dict) -> int:
+    """Count user messages that contain correction signals."""
     count = 0
     for m in user_msgs:
         txt = m.content.lower().strip()
-        if any(trigger in txt for trigger in NEGATION_TRIGGERS):
+        # Language-specific correction patterns
+        if match_interaction_pattern(patterns, "correction", txt):
+            count += 1
+        # Universal: negative emoji
+        elif has_emoji(txt, "negative"):
+            count += 1
+        # Universal: multiple exclamation marks suggest frustration
+        elif txt.count("!") >= 2:
+            count += 1
+    return count
+
+
+def _count_clarifications(assistant_msgs: list[Message], patterns: dict) -> int:
+    """Count assistant messages that ask for clarification."""
+    count = 0
+    for m in assistant_msgs:
+        txt = m.content.lower().strip() if m.content else ""
+        if not txt:
+            continue
+        # Language-specific clarification patterns
+        if match_interaction_pattern(patterns, "clarification_question", txt):
+            count += 1
+        # Universal: question mark (the agent is asking something)
+        elif has_question_mark(txt):
+            count += 1
+        # Universal: confusion emoji
+        elif has_emoji(txt, "question"):
             count += 1
     return count
 
 
 def _count_redos(messages: list[Message]) -> int:
+    """Count repeated tool calls (same tool name called more than once).
+
+    This is structural and language-agnostic.
+    """
     tool_names = []
     for m in messages:
         for tc in m.tool_calls:
@@ -123,7 +157,10 @@ def _count_redos(messages: list[Message]) -> int:
     return redos
 
 
-def _classify_exit(conv: Conversation, user_msgs: list[Message]) -> tuple[str, str]:
+def _classify_exit(
+    conv: Conversation, user_msgs: list[Message], patterns: dict
+) -> tuple[str, str]:
+    """Determine exit quality using language-aware patterns."""
     if conv.end_reason:
         if conv.end_reason in ("stop", "end_turn", "done", "manual"):
             return "clean", conv.end_reason
@@ -135,7 +172,12 @@ def _classify_exit(conv: Conversation, user_msgs: list[Message]) -> tuple[str, s
         return "dangling", "no_user_messages"
 
     last_user = user_msgs[-1].content.lower().strip()
-    if any(marker in last_user for marker in EXIT_POSITIVE):
+
+    # Language-specific positive exit patterns
+    if match_interaction_pattern(patterns, "exit_positive", last_user):
         return "clean", "positive_signoff"
+    # Universal: gratitude emoji
+    if has_emoji(last_user, "gratitude"):
+        return "clean", "emoji_signoff"
 
     return "dangling", "no_clear_exit"

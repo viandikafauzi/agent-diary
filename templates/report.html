@@ -809,7 +809,7 @@ body {
         <span>Model: {{ conv.model or 'unknown' }}</span>
         <span>{{ conv.message_count|thousands }} msgs</span>
         <span>{{ conv.tool_call_count|thousands }} tool calls</span>
-        <span>{% if conv.tokens_input or conv.tokens_output %}in: {{ conv.tokens_input|thousands }} out: {{ conv.tokens_output|thousands }}{% else %}{{ conv.total_tokens|thousands }} tokens{% endif %}</span>
+        {% if conv.tokens_input or conv.tokens_output %}<span class="token-badge in">in: {{ conv.tokens_input|thousands }}</span> <span class="token-badge out">out: {{ conv.tokens_output|thousands }}</span>{% else %}<span class="token-badge total">{{ conv.total_tokens|thousands }} tokens</span>{% endif %}
       </div>
     </div>
     {% endfor %}
