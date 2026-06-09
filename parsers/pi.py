@@ -1,10 +1,8 @@
 import json
-import glob
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .base import Conversation, Message
+from .base import Conversation, Message, parse_iso, day_range
 
 PI_SESSIONS_DIR = Path.home() / ".pi" / "agent" / "sessions"
 
@@ -14,12 +12,10 @@ def is_installed() -> bool:
 
 
 def extract(date_str: str) -> list[Conversation]:
-    target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-    day_start = datetime(target_date.year, target_date.month, target_date.day, tzinfo=timezone.utc)
-    day_end = datetime(target_date.year, target_date.month, target_date.day, 23, 59, 59, 999999, tzinfo=timezone.utc)
+    day_start, day_end = day_range(date_str)
 
     conversations = []
-    jsonl_files = sorted(glob.glob(os.path.join(str(PI_SESSIONS_DIR), "**/*.jsonl"), recursive=True))
+    jsonl_files = sorted(PI_SESSIONS_DIR.rglob("*.jsonl"))
 
     for filepath in jsonl_files:
         session_data = _parse_jsonl(filepath)
@@ -39,12 +35,14 @@ def extract(date_str: str) -> list[Conversation]:
         tool_count = sum(1 for m in messages if m.tool_calls)
         total_tokens = sum(m.token_count or 0 for m in messages)
         started = session_data["session_timestamp"]
+        ended = messages[-1].timestamp
 
         conversations.append(Conversation(
             id=session_data["session_id"],
             source="pi",
             model=session_data["model"],
             started_at=started,
+            ended_at=ended,
             messages=messages,
             message_count=len(messages),
             tool_call_count=tool_count,
@@ -54,7 +52,7 @@ def extract(date_str: str) -> list[Conversation]:
     return conversations
 
 
-def _parse_jsonl(filepath: str) -> dict | None:
+def _parse_jsonl(filepath: Path) -> dict | None:
     session_id = None
     session_timestamp = None
     model = None
@@ -76,7 +74,7 @@ def _parse_jsonl(filepath: str) -> dict | None:
                     session_id = obj.get("id")
                     ts_str = obj.get("timestamp")
                     if ts_str:
-                        session_timestamp = _parse_iso(ts_str)
+                        session_timestamp = parse_iso(ts_str)
                 elif t == "model_change":
                     model = obj.get("modelId") or obj.get("model") or model
                 elif t == "message":
@@ -131,7 +129,7 @@ def _build_messages(events: list[dict], default_model: str | None) -> list[Messa
             if isinstance(ts_str, (int, float)):
                 ts = datetime.fromtimestamp(ts_str / 1000, tz=timezone.utc) if ts_str > 1e12 else datetime.fromtimestamp(ts_str, tz=timezone.utc)
             elif isinstance(ts_str, str):
-                ts = _parse_iso(ts_str)
+                ts = parse_iso(ts_str)
 
         model = msg.get("model") or default_model
 
@@ -152,10 +150,3 @@ def _build_messages(events: list[dict], default_model: str | None) -> list[Messa
 
     return messages
 
-
-def _parse_iso(ts_str: str) -> datetime | None:
-    ts_str = ts_str.replace("Z", "+00:00")
-    try:
-        return datetime.fromisoformat(ts_str)
-    except ValueError:
-        return None

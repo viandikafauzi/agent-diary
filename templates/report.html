@@ -839,28 +839,28 @@ function openSession(id) {
   if (!conv) return;
 
   var title = document.getElementById('modalTitle');
-  title.innerHTML = '<span class="source-badge ' + conv.source + '">' + conv.source + '</span> '
-    + '<span>' + (conv.model || 'unknown') + '</span> '
-    + '<span class="meta">' + (conv.started || '') + ' &middot; ' + conv.messages.length + ' msgs</span>';
+  title.innerHTML = '<span class="source-badge ' + escapeHtml(conv.source) + '">' + escapeHtml(conv.source) + '</span> '
+    + '<span>' + escapeHtml(conv.model || 'unknown') + '</span> '
+    + '<span class="meta">' + escapeHtml(conv.started || '') + ' &middot; ' + conv.messages.length + ' msgs</span>';
 
   var body = document.getElementById('modalBody');
   var html = '';
   for (var i = 0; i < conv.messages.length; i++) {
     var msg = conv.messages[i];
-    var roleClass = msg.role === 'toolResult' ? 'tool' : msg.role;
+    var roleClass = msg.role === 'toolResult' ? 'tool' : escapeHtml(msg.role);
     html += '<div class="transcript-msg ' + roleClass + '">';
     html += '<div class="msg-header">';
-    html += '<span class="role-badge">' + msg.role + '</span>';
+    html += '<span class="role-badge">' + escapeHtml(msg.role) + '</span>';
     if (msg.tool) {
-      html += '<span class="tool-info">' + msg.tool + '</span>';
+      html += '<span class="tool-info">' + escapeHtml(msg.tool) + '</span>';
     }
     if (msg.tool_result_attr) {
       html += '<span class="tool-info">from: ' + escapeHtml(msg.tool_result_attr) + '</span>';
     }
     if (msg.finish_reason) {
-      html += '<span class="tool-info">stop: ' + msg.finish_reason + '</span>';
+      html += '<span class="tool-info">stop: ' + escapeHtml(msg.finish_reason) + '</span>';
     }
-    html += '<span class="msg-ts">' + msg.ts + '</span>';
+    html += '<span class="msg-ts">' + escapeHtml(msg.ts) + '</span>';
     html += '</div>';
     var display = null;
     if (msg.content) {
