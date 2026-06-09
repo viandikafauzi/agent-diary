@@ -14,10 +14,10 @@ Discovery strategy:
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
-from .base import Conversation, Message
+from .base import Conversation, Message, parse_iso, day_range
 
 CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
@@ -27,9 +27,7 @@ def is_installed() -> bool:
 
 
 def extract(date_str: str) -> list[Conversation]:
-    target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-    day_start = datetime(target_date.year, target_date.month, target_date.day, tzinfo=timezone.utc)
-    day_end = datetime(target_date.year, target_date.month, target_date.day, 23, 59, 59, 999999, tzinfo=timezone.utc)
+    day_start, day_end = day_range(date_str)
 
     conversations: list[Conversation] = []
     seen: set[str] = set()
@@ -98,27 +96,6 @@ def _load_index(project_dir: Path) -> dict | None:
         return None
 
 
-def _peek_first_ts(path: Path) -> datetime | None:
-    """Read .jsonl lines until one with a timestamp field is found.
-    Returns the parsed timestamp, or None if no timestamped line exists."""
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            for raw in f:
-                raw = raw.strip()
-                if not raw:
-                    continue
-                try:
-                    obj = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-                ts = _parse_line_ts(obj)
-                if ts is not None:
-                    return ts
-    except OSError:
-        return None
-    return None
-
-
 def _has_activity_on_date(path: Path, day_start: datetime, day_end: datetime) -> bool:
     """Return True if any line in the file has a timestamp within [day_start, day_end]."""
     try:
@@ -155,10 +132,10 @@ def _parse_session(
 ) -> Conversation | None:
     """Parse a single .jsonl transcript into a Conversation.
 
-    The caller already decided this session is relevant via _peek_first_ts or
-    the index — so we include *all* messages regardless of timestamp, keeping
-    the conversation whole.  Filtering individual lines by a date window
-    silently drops user messages that are just outside the boundary.
+    The caller already decided this session is relevant via the index or
+    _has_activity_on_date — so we include *all* messages regardless of
+    timestamp, keeping the conversation whole.  Filtering individual lines
+    by a date window silently drops user messages just outside the boundary.
     """
     path = Path(jsonl_path)
     if not path.exists():
@@ -232,22 +209,14 @@ def _extract_model(lines: list[dict]) -> str | None:
     return None
 
 
-def _build_messages(
-    lines: list[dict], day_start: datetime | None = None, day_end: datetime | None = None
-) -> list[Message]:
-    """Build Message objects from jsonl lines.
-
-    When day_start/day_end are provided, lines outside that window are skipped.
-    Omit both to include all lines.
-    """
+def _build_messages(lines: list[dict]) -> list[Message]:
+    """Build Message objects from jsonl lines."""
     messages: list[Message] = []
 
     for line in lines:
         ltype = line.get("type", "")
         ts = _parse_line_ts(line)
         if ts is None:
-            continue
-        if day_start and day_end and (ts < day_start or ts > day_end):
             continue
 
         if ltype == "assistant":
@@ -371,18 +340,7 @@ def _parse_line_ts(line: dict) -> datetime | None:
     raw = line.get("timestamp")
     if raw is None:
         return None
-    return _parse_iso(str(raw))
-
-
-def _parse_iso(ts_str: str) -> datetime | None:
-    """Parse ISO-8601 to UTC datetime.  Returns None on unparseable input."""
-    if not ts_str:
-        return None
-    try:
-        ts_str = ts_str.replace("Z", "+00:00")
-        return datetime.fromisoformat(ts_str)
-    except (ValueError, TypeError):
-        return None
+    return parse_iso(str(raw))
 
 
 def _sum_cost(lines: list[dict]) -> float:

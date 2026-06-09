@@ -129,15 +129,13 @@ def _classify_exit(conv: Conversation, user_msgs: list[Message]) -> tuple[str, s
             return "clean", conv.end_reason
         elif conv.end_reason in ("error", "timeout", "max_tokens", "aborted"):
             return "forced", conv.end_reason
+        return "unknown", conv.end_reason
 
     if not user_msgs:
         return "dangling", "no_user_messages"
 
-    last_user = user_msgs[-1].content.lower().strip() if user_msgs else ""
+    last_user = user_msgs[-1].content.lower().strip()
     if any(marker in last_user for marker in EXIT_POSITIVE):
         return "clean", "positive_signoff"
-
-    if conv.end_reason:
-        return "clean", conv.end_reason
 
     return "dangling", "no_clear_exit"

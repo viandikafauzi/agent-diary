@@ -17,12 +17,7 @@ _env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)), autoescape=True)
 
 def _thousands(n: int) -> str:
     """Format integer with dots as thousand separators (e.g. 180469 -> '180.469')."""
-    s = str(int(n))
-    parts = []
-    while s:
-        parts.append(s[-3:])
-        s = s[:-3]
-    return ".".join(reversed(parts))
+    return f"{n:,}".replace(",", ".")
 
 
 _env.filters["thousands"] = _thousands

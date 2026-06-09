@@ -1,6 +1,23 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
+
+
+def parse_iso(ts_str: str) -> datetime | None:
+    if not ts_str:
+        return None
+    try:
+        ts_str = ts_str.replace("Z", "+00:00")
+        return datetime.fromisoformat(ts_str)
+    except (ValueError, TypeError):
+        return None
+
+
+def day_range(date_str: str) -> tuple[datetime, datetime]:
+    target = datetime.strptime(date_str, "%Y-%m-%d")
+    start = target.replace(tzinfo=timezone.utc)
+    end = target.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc)
+    return start, end
 
 
 @dataclass
