@@ -75,6 +75,9 @@ def main():
         print(f"No sessions found for {args.date}")
         sys.exit(0)
 
+    # Sort sessions most-recent-first for display
+    all_conversations.sort(key=lambda c: c.ended_at or c.started_at or datetime.min, reverse=True)
+
     print(f"\nAnalyzing {len(all_conversations)} session(s)...")
 
     sentiment_result = sentiment.analyze(all_conversations)
