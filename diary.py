@@ -63,6 +63,8 @@ def main():
             print(f"  {name}: {len(convs)} session(s) found")
         except Exception as e:
             print(f"  {name}: error — {e}")
+            import traceback
+            traceback.print_exc()
 
     if not active_sources:
         print("No AI CLIs found on this system.")

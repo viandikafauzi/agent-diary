@@ -14,12 +14,20 @@ def _ensure_nltk_data():
             nltk.download(resource, quiet=True)
 
 
-_ensure_nltk_data()
-_sia = SentimentIntensityAnalyzer()
+_sia: SentimentIntensityAnalyzer | None = None
+
+
+def _ensure_nltk():
+    global _sia
+    if _sia is not None:
+        return
+    _ensure_nltk_data()
+    _sia = SentimentIntensityAnalyzer()
 
 
 def analyze(conversations: list[Conversation]) -> dict:
     """Analyze agent messages for sentiment polarity and subjectivity."""
+    _ensure_nltk()
     all_agent_scores = []
     all_subjectivity = []
     per_conversation = []
