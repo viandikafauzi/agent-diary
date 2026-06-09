@@ -749,7 +749,7 @@ body {
   <h3 style="color:var(--green)">Top Conversations</h3>
   <div class="session-list">
     {% for s in notable.best %}
-    <div class="session-item" data-source="{{ s.source }}" data-session-id="{{ s.id }}">
+    <div class="session-item" data-source="{{ s.source }}" data-session-id="{{ s.id }}" onclick="openSession(this.dataset.sessionId)">
       <div class="session-header">
         <span class="source-badge {{ s.source }}">{{ s.source }}</span>
         <span class="score-pill good">{{ s.score }}</span>
@@ -768,7 +768,7 @@ body {
   <h3 style="color:var(--red); margin-top:1.5rem">Bottom Conversations</h3>
   <div class="session-list">
     {% for s in notable.worst %}
-    <div class="session-item" data-source="{{ s.source }}" data-session-id="{{ s.id }}">
+    <div class="session-item" data-source="{{ s.source }}" data-session-id="{{ s.id }}" onclick="openSession(this.dataset.sessionId)">
       <div class="session-header">
         <span class="source-badge {{ s.source }}">{{ s.source }}</span>
         <span class="score-pill bad">{{ s.score }}</span>
@@ -792,7 +792,7 @@ body {
     {% for conv in conversations %}
     {% set conv_sentiment = (sentiment.per_conversation | selectattr("id", "equalto", conv.id) | list) %}
     {% set tone_score = conv_sentiment[0].avg_compound if conv_sentiment else 0 %}
-    <div class="session-item" data-source="{{ conv.source }}" data-session-id="{{ conv.id }}">
+    <div class="session-item" data-source="{{ conv.source }}" data-session-id="{{ conv.id }}" onclick="openSession(this.dataset.sessionId)">
       <div class="session-header">
         <div>
           <span class="source-badge {{ conv.source }}">{{ conv.source }}</span>
@@ -832,14 +832,6 @@ body {
 <script>
 var CONVERSATIONS = {{ conversations_json | safe }};
 var activeFilter = 'all';
-
-// Event delegation: clicks on any element with data-session-id open the modal
-document.body.addEventListener('click', function(e) {
-  var el = e.target.closest('[data-session-id]');
-  if (el) {
-    openSession(el.getAttribute('data-session-id'));
-  }
-});
 
 function openSession(id) {
   if (!id) return;
