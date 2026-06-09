@@ -164,7 +164,7 @@ def _parse_session(
 
     # Cost: sum costUSD across all lines in the transcript
     cost = _sum_cost(lines)
-    tokens = _sum_tokens(lines)
+    tokens_in, tokens_out, tokens_total = _sum_tokens(lines)
 
     return Conversation(
         id=session_id,
@@ -177,7 +177,9 @@ def _parse_session(
         message_count=len(messages),
         tool_call_count=tool_calls,
         estimated_cost_usd=cost,
-        total_tokens=tokens,
+        total_tokens=tokens_total,
+        tokens_input=tokens_in,
+        tokens_output=tokens_out,
     )
 
 
@@ -353,10 +355,14 @@ def _sum_cost(lines: list[dict]) -> float:
     return round(total, 6)
 
 
-def _sum_tokens(lines: list[dict]) -> int:
-    """Sum unique output+input tokens from assistant usage.iterations."""
+def _sum_tokens(lines: list[dict]) -> tuple[int, int, int]:
+    """Sum unique input and output tokens from assistant usage.iterations.
+
+    Returns (input_tokens, output_tokens, total_tokens).
+    """
     seen = set()
-    total = 0
+    tokens_in = 0
+    tokens_out = 0
     for line in lines:
         if line.get("type") == "assistant":
             msg = line.get("message", {})
@@ -374,5 +380,6 @@ def _sum_tokens(lines: list[dict]) -> int:
                         key = (inp, out)
                         if key not in seen:
                             seen.add(key)
-                            total += inp + out
-    return total
+                            tokens_in += inp
+                            tokens_out += out
+    return tokens_in, tokens_out, tokens_in + tokens_out
