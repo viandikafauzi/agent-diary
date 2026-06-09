@@ -5,7 +5,7 @@ import argparse
 import sys
 from datetime import datetime
 
-from parsers import hermes, pi, claude
+from parsers import hermes, pi, claude, opencode
 from analyzers import sentiment, tone, interaction
 from reporters import html
 
@@ -22,7 +22,7 @@ def main():
     parser.add_argument(
         "--sources",
         default="",
-        help="Comma-separated list of sources to include (hermes,pi,claude). Default: all installed.",
+        help="Comma-separated list of sources to include (hermes,pi,claude,opencode). Default: all installed.",
     )
     parser.add_argument(
         "--output",
@@ -44,6 +44,7 @@ def main():
         ("hermes", hermes.is_installed, hermes.extract),
         ("pi", pi.is_installed, pi.extract),
         ("claude", claude.is_installed, claude.extract),
+        ("opencode", opencode.is_installed, opencode.extract),
     ]
 
     active_sources = []
@@ -73,6 +74,9 @@ def main():
     if not all_conversations:
         print(f"No sessions found for {args.date}")
         sys.exit(0)
+
+    # Sort sessions most-recent-first for display
+    all_conversations.sort(key=lambda c: c.ended_at or c.started_at or datetime.min, reverse=True)
 
     print(f"\nAnalyzing {len(all_conversations)} session(s)...")
 

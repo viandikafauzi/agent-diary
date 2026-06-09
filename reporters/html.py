@@ -237,9 +237,13 @@ def _serialize_conversations(conversations: list[Conversation]) -> str:
             if m.tool_calls:
                 names = [tc.get("name", "?") for tc in m.tool_calls]
                 tool_info = ", ".join(names)
+            # Truncate very long messages to keep the JSON payload manageable
+            content = m.content
+            if content and len(content) > 5000:
+                content = content[:5000] + "\n\n[truncated — " + str(len(content)) + " chars]"
             msgs.append({
                 "role": m.role,
-                "content": m.content,
+                "content": content,
                 "ts": ts_str,
                 "tool": tool_info,
                 "tool_result_attr": m.tool_name or "",
