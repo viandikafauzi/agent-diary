@@ -830,10 +830,17 @@ body {
 </div>
 
 <script>
-var CONVERSATIONS = {{ conversations_json | safe }};
+var CONVERSATIONS = null;
 var activeFilter = 'all';
 
+try {
+  CONVERSATIONS = {{ conversations_json | safe }};
+} catch (e) {
+  console.error('Failed to load session data:', e);
+}
+
 function openSession(id) {
+  if (!CONVERSATIONS) { console.error('Session data not loaded'); return; }
   var conv = CONVERSATIONS[id];
   if (!conv) return;
 
