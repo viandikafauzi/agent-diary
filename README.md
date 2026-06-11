@@ -50,8 +50,9 @@ python diary.py --date 2026-05-31 --output my-report.html
 - Agent behavior breakdown
 - Interaction quality metrics
 - Per-source comparison table
-- Notable conversations (best/worst sentiment)
+- Notable chats (best/worst per-message sentiment)
 - Clickable session transcripts with full message history
+- In/out token counts per conversation
 - Source filtering (when multiple sources are active)
 
 ## Project Layout
@@ -95,7 +96,6 @@ The tone and interaction analyzers now support **multiple languages**:
 |----------|------|---------------|---------------------|
 | English  | `en` | ✅ Full set   | ✅ Full set         |
 | Indonesian | `id` | ✅ Full set | ✅ Full set         |
-| Malay    | `ms` | Inherits `id` | Inherits `id`       |
 
 **How it works:**
 1. Message text is sampled and language-detected via `langdetect`
