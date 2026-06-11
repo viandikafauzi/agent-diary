@@ -77,6 +77,11 @@ body {
 .source-badge.claude { background: #f0883e33; color: var(--orange); border: 1px solid #f0883e44; }
 .source-badge.codex { background: #f8514933; color: var(--red); border: 1px solid #f8514944; }
 
+.token-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
+.token-badge.in { background: #3fb95033; color: var(--green); border: 1px solid #3fb95044; }
+.token-badge.out { background: #1f6feb33; color: var(--blue); border: 1px solid #1f6feb44; }
+.token-badge.total { background: #8b949e33; color: var(--text-dim); border: 1px solid #8b949e44; }
+
 /* Summary Cards */
 .cards {
   display: grid;
@@ -525,6 +530,16 @@ body {
   color: var(--text-dim);
 }
 
+/* Highlight flash for scroll-to */
+.highlight-flash {
+  animation: highlightPulse 2s ease-out;
+}
+
+@keyframes highlightPulse {
+  0% { background: rgba(88, 166, 255, 0.3); }
+  100% { background: transparent; }
+}
+
 .msg-ts {
   color: var(--text-dim);
   font-size: 0.7rem;
@@ -740,24 +755,24 @@ body {
 {% endif %}
 {% endfor %}
 
-<!-- Notable Conversations -->
+<!-- Notable Chats -->
 {% if notable.best or notable.worst %}
 <div class="section">
-  <h2>Notable Conversations</h2>
+  <h2>Notable Chats</h2>
 
   {% if notable.best %}
-  <h3 style="color:var(--green)">Top Conversations</h3>
+  <h3 style="color:var(--green)">Most Positive Messages</h3>
   <div class="session-list">
     {% for s in notable.best %}
-    <div class="session-item" data-source="{{ s.source }}" data-session-id="{{ s.id }}" onclick="openSession('{{ s.id }}')">
+    <div class="session-item" data-source="{{ s.source }}" data-conv-id="{{ s.conv_id }}" data-msg-idx="{{ s.msg_idx }}" onclick="openSessionAtMessage('{{ s.conv_id }}', {{ s.msg_idx }})">
       <div class="session-header">
         <span class="source-badge {{ s.source }}">{{ s.source }}</span>
-        <span class="score-pill good">{{ s.score }}</span>
+        <span class="score-pill good">{{ s.compound }}</span>
       </div>
-      <div class="session-preview">{{ s.preview }}</div>
+      <div class="session-preview">{{ s.content_preview }}</div>
       <div class="session-meta">
-        <span>{{ s.model }}</span>
-        <span>{{ s.turns }} turns</span>
+        <span>msg #{{ s.msg_idx }}</span>
+        {% if s.tokens_input or s.tokens_output %}<span class="token-badge in">in: {{ s.tokens_input|thousands }}</span> <span class="token-badge out">out: {{ s.tokens_output|thousands }}</span>{% endif %}
       </div>
     </div>
     {% endfor %}
@@ -765,18 +780,18 @@ body {
   {% endif %}
 
   {% if notable.worst %}
-  <h3 style="color:var(--red); margin-top:1.5rem">Bottom Conversations</h3>
+  <h3 style="color:var(--red); margin-top:1.5rem">Most Negative Messages</h3>
   <div class="session-list">
     {% for s in notable.worst %}
-    <div class="session-item" data-source="{{ s.source }}" data-session-id="{{ s.id }}" onclick="openSession('{{ s.id }}')">
+    <div class="session-item" data-source="{{ s.source }}" data-conv-id="{{ s.conv_id }}" data-msg-idx="{{ s.msg_idx }}" onclick="openSessionAtMessage('{{ s.conv_id }}', {{ s.msg_idx }})">
       <div class="session-header">
         <span class="source-badge {{ s.source }}">{{ s.source }}</span>
-        <span class="score-pill bad">{{ s.score }}</span>
+        <span class="score-pill bad">{{ s.compound }}</span>
       </div>
-      <div class="session-preview">{{ s.preview }}</div>
+      <div class="session-preview">{{ s.content_preview }}</div>
       <div class="session-meta">
-        <span>{{ s.model }}</span>
-        <span>{{ s.turns }} turns</span>
+        <span>msg #{{ s.msg_idx }}</span>
+        {% if s.tokens_input or s.tokens_output %}<span class="token-badge in">in: {{ s.tokens_input|thousands }}</span> <span class="token-badge out">out: {{ s.tokens_output|thousands }}</span>{% endif %}
       </div>
     </div>
     {% endfor %}
@@ -847,7 +862,7 @@ function openSession(id) {
   for (var i = 0; i < conv.messages.length; i++) {
     var msg = conv.messages[i];
     var roleClass = msg.role === 'toolResult' ? 'tool' : escapeHtml(msg.role);
-    html += '<div class="transcript-msg ' + roleClass + '">';
+    html += '<div id="msg-' + i + '" class="transcript-msg ' + roleClass + '">';
     html += '<div class="msg-header">';
     html += '<span class="role-badge">' + escapeHtml(msg.role) + '</span>';
     if (msg.tool) {
@@ -877,6 +892,20 @@ function openSession(id) {
 
   document.getElementById('modalOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
+}
+
+function openSessionAtMessage(id, msgIdx) {
+  openSession(id);
+  setTimeout(function() {
+    var target = document.getElementById('msg-' + msgIdx);
+    if (target) {
+      target.scrollIntoView({behavior: "smooth", block: "center"});
+      target.classList.add("highlight-flash");
+      setTimeout(function() {
+        target.classList.remove("highlight-flash");
+      }, 2000);
+    }
+  }, 100);
 }
 
 function closeModal(e) {

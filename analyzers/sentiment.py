@@ -33,16 +33,35 @@ def analyze(conversations: list[Conversation]) -> dict:
     per_conversation = []
     polarity_buckets = Counter({"positive": 0, "neutral": 0, "negative": 0})
 
+    per_message = []
+
     for conv in conversations:
-        agent_msgs = [m for m in conv.messages if m.role == "assistant"]
         scores = []
         subj_scores = []
-        for m in agent_msgs:
-            if not m.content.strip():
+        for msg_idx, m in enumerate(conv.messages):
+            if m.role != "assistant" or not m.content.strip():
                 continue
             s = _sia.polarity_scores(m.content)
             scores.append(s)
             all_agent_scores.append(s)
+
+            compound = round(s["compound"], 3)
+            if compound >= 0.05:
+                polarity_label = "positive"
+            elif compound <= -0.05:
+                polarity_label = "negative"
+            else:
+                polarity_label = "neutral"
+
+            per_message.append({
+                "conv_id": conv.id,
+                "source": conv.source,
+                "msg_idx": msg_idx,
+                "content_preview": m.content[:150] + ("..." if len(m.content) > 150 else ""),
+                "compound": compound,
+                "polarity_label": polarity_label,
+            })
+
             try:
                 blob = TextBlob(m.content)
                 subj_scores.append(blob.sentiment.subjectivity)
@@ -88,5 +107,6 @@ def analyze(conversations: list[Conversation]) -> dict:
         "dominant_tone": dominant,
         "polarity_distribution": dict(polarity_buckets),
         "per_conversation": per_conversation,
+        "per_message": per_message,
         "total_agent_messages": len(all_agent_scores),
     }
