@@ -120,41 +120,25 @@ def _compute_effectiveness(tone: dict, interaction: dict) -> dict:
 
 
 def _find_notable(conversations: list, sentiment: dict) -> dict:
-    scored = sentiment.get("per_conversation", [])
-    if not scored:
+    per_message = sentiment.get("per_message", [])
+    if not per_message:
         return {"best": [], "worst": []}
 
-    sorted_by_score = sorted(scored, key=lambda x: x["avg_compound"], reverse=True)
-    best = sorted_by_score[:3]
-    worst = sorted(sorted_by_score, key=lambda x: x["avg_compound"])[:3]
+    conv_map = {c.id: c for c in conversations}
 
-    best_details = []
-    for s in best:
-        conv = next((c for c in conversations if c.id == s["id"]), None)
+    positive = [m for m in per_message if m["polarity_label"] == "positive"]
+    negative = [m for m in per_message if m["polarity_label"] == "negative"]
+
+    best = sorted(positive, key=lambda x: x["compound"], reverse=True)[:5]
+    worst = sorted(negative, key=lambda x: x["compound"])[:5]
+
+    for entry in best + worst:
+        conv = conv_map.get(entry.get("conv_id", ""))
         if conv:
-            best_details.append({
-                "id": s["id"],
-                "source": s["source"],
-                "model": conv.model or "unknown",
-                "score": s["avg_compound"],
-                "turns": len([m for m in conv.messages if m.role == "user"]),
-                "preview": _get_preview(conv),
-            })
+            entry["tokens_input"] = conv.tokens_input
+            entry["tokens_output"] = conv.tokens_output
 
-    worst_details = []
-    for s in worst:
-        conv = next((c for c in conversations if c.id == s["id"]), None)
-        if conv:
-            worst_details.append({
-                "id": s["id"],
-                "source": s["source"],
-                "model": conv.model or "unknown",
-                "score": s["avg_compound"],
-                "turns": len([m for m in conv.messages if m.role == "user"]),
-                "preview": _get_preview(conv),
-            })
-
-    return {"best": best_details, "worst": worst_details}
+    return {"best": best, "worst": worst}
 
 
 def _bundle(sentiment, tone, interaction, conversations):
