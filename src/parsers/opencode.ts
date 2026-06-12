@@ -64,6 +64,8 @@ export function parseOpencode(dateStr: string): Session[] {
 
         if (role === "user") {
           const contentParts: string[] = [];
+          let hasToolResult = false;
+          let hasUserText = false;
           for (const part of parts) {
             let partData: Record<string, unknown> = {};
             try {
@@ -74,13 +76,16 @@ export function parseOpencode(dateStr: string): Session[] {
 
             if (partData.type === "text" && !partData.synthetic) {
               contentParts.push((partData.text as string) ?? "");
+              hasUserText = true;
             } else if (partData.type === "tool-result" && partData.text) {
               contentParts.push((partData.text as string) ?? "");
+              hasToolResult = true;
             }
           }
 
+          // Mark as toolResult if it only contains tool results (no user text)
           messages.push({
-            role: "user",
+            role: hasToolResult && !hasUserText ? "toolResult" : "user",
             content: contentParts.join("\n"),
             timestamp,
             toolCalls: [],

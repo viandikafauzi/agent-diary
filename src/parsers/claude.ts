@@ -257,9 +257,9 @@ function buildMessages(
     const msg = obj.message;
 
     if (type === "user") {
-      const content = extractUserContent(msg);
+      const { content, isToolResult } = extractUserContent(msg);
       messages.push({
-        role: "user",
+        role: isToolResult ? "toolResult" : "user",
         content,
         timestamp: parseTimestamp(obj.timestamp),
         toolCalls: [],
@@ -286,23 +286,28 @@ function buildMessages(
   return messages;
 }
 
-function extractUserContent(msg: ClaudeMessage): string {
-  if (typeof msg.content === "string") return msg.content;
+function extractUserContent(msg: ClaudeMessage): { content: string; isToolResult: boolean } {
+  if (typeof msg.content === "string") return { content: msg.content, isToolResult: false };
 
   if (Array.isArray(msg.content)) {
     const parts: string[] = [];
+    let hasToolResult = false;
+    let hasText = false;
     for (const block of msg.content) {
       if (block.type === "text" && typeof block.text === "string") {
         parts.push(block.text);
+        hasText = true;
       } else if (block.type === "tool_result") {
         const resultText = extractToolResultText(block);
         if (resultText) parts.push(resultText);
+        hasToolResult = true;
       }
     }
-    return parts.join("\n");
+    // Mark as toolResult if it only contains tool results (no user text)
+    return { content: parts.join("\n"), isToolResult: hasToolResult && !hasText };
   }
 
-  return "";
+  return { content: "", isToolResult: false };
 }
 
 function extractToolResultText(block: ClaudeContentBlock): string {

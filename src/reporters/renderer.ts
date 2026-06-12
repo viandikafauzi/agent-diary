@@ -10,6 +10,7 @@ interface SerializedMessage {
   role: string;
   content: string;
   tool: string | null;
+  toolInput: string | null;
   tool_result_attr: string | null;
   finish_reason: string | null;
   ts: string;
@@ -72,6 +73,81 @@ function toneScorePillClass(score: number): string {
   return 'ok';
 }
 
+function formatToolInput(tc: Record<string, unknown>): string | null {
+  // Extract input/arguments from tool call
+  let input: Record<string, unknown> | undefined;
+  
+  if (tc.input && typeof tc.input === 'object') {
+    input = tc.input as Record<string, unknown>;
+  } else if (tc.arguments && typeof tc.arguments === 'object') {
+    input = tc.arguments as Record<string, unknown>;
+  } else if (tc.function && typeof tc.function === 'object') {
+    const fn = tc.function as Record<string, unknown>;
+    if (typeof fn.arguments === 'string') {
+      try {
+        input = JSON.parse(fn.arguments);
+      } catch {
+        return fn.arguments as string;
+      }
+    } else if (fn.arguments && typeof fn.arguments === 'object') {
+      input = fn.arguments as Record<string, unknown>;
+    }
+  }
+  
+  if (!input) return null;
+  
+  // Get tool name for context-aware formatting
+  let toolName = '';
+  if (typeof tc.name === 'string') toolName = tc.name;
+  else if (tc.function && typeof tc.function === 'object' && typeof (tc.function as Record<string, unknown>).name === 'string') toolName = (tc.function as Record<string, unknown>).name as string;
+  
+  // Format based on tool type for better readability
+  const name = toolName.toLowerCase();
+  
+  if (name === 'bash' || name === 'execute' || name === 'execute_command') {
+    // For bash commands, show the command prominently
+    const cmd = input.command ?? input.cmd ?? input.script;
+    if (typeof cmd === 'string') return cmd;
+  }
+  
+  if (name === 'read' || name === 'read_file') {
+    const filePath = input.path ?? input.file_path ?? input.filePath;
+    if (typeof filePath === 'string') return filePath;
+  }
+  
+  if (name === 'write' || name === 'create_file' || name === 'write_file') {
+    const filePath = input.path ?? input.file_path ?? input.filePath;
+    if (typeof filePath === 'string') return filePath;
+  }
+  
+  if (name === 'edit' || name === 'replace' || name === 'edit_file') {
+    const filePath = input.path ?? input.file_path ?? input.filePath ?? input.filename;
+    if (typeof filePath === 'string') return filePath;
+  }
+  
+  if (name === 'search' || name === 'grep' || name === 'find') {
+    const query = input.query ?? input.pattern ?? input.search;
+    if (typeof query === 'string') return query;
+  }
+  
+  // Default: show key params
+  const keys = Object.keys(input);
+  if (keys.length === 0) return null;
+  
+  // Try to find a 'main' param like command, path, query, text, content
+  for (const key of ['command', 'cmd', 'path', 'query', 'text', 'content', 'url', 'name', 'id']) {
+    if (input[key] !== undefined) {
+      const val = input[key];
+      if (typeof val === 'string') return val.length > 200 ? val.slice(0, 200) + '...' : val;
+      return String(val);
+    }
+  }
+  
+  // Fallback: compact JSON
+  const json = JSON.stringify(input);
+  return json.length > 200 ? json.slice(0, 200) + '...' : json;
+}
+
 function serializeSession(sess: Session): SerializedSession {
   const started = sess.startedAt ? sess.startedAt.toISOString() : '';
   const messages: SerializedMessage[] = sess.messages.map((msg) => {
@@ -84,11 +160,18 @@ function serializeSession(sess: Session): SerializedSession {
       })
       .filter(Boolean);
     const tool = msg.toolName ?? (toolNames.length > 0 ? toolNames.join(', ') : null);
+    
+    // Get formatted tool input from first tool call
+    let toolInput: string | null = null;
+    if (msg.toolCalls.length > 0) {
+      toolInput = formatToolInput(msg.toolCalls[0]);
+    }
 
     return {
       role: msg.role,
       content: msg.content,
       tool,
+      toolInput,
       tool_result_attr: null,
       finish_reason: msg.finishReason,
       ts: msg.timestamp ? msg.timestamp.toISOString() : '',
@@ -470,7 +553,12 @@ function openSession(id) {
     if (msg.content) {
       display = msg.content;
     } else if (msg.tool) {
-      display = '[tool calls: ' + msg.tool + ']';
+      // Show tool name with its actual input/command
+      if (msg.toolInput) {
+        display = msg.tool + ': ' + msg.toolInput;
+      } else {
+        display = msg.tool;
+      }
     }
     if (display) {
       var truncated = display.length > 2000 ? display.slice(0, 2000) + '\\n\\n[truncated \\u2014 ' + display.length + ' chars]' : display;
