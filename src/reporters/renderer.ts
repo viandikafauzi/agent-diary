@@ -70,7 +70,7 @@ function serializeConversation(conv: Conversation): SerializedConv {
   const started = conv.startedAt ? conv.startedAt.toISOString() : '';
   const messages: SerializedMessage[] = conv.messages.map((msg) => {
     const toolNames = msg.toolCalls
-      .map((tc) => tc.name ?? tc.function ?? '')
+      .map((tc) => String(tc.name ?? tc.function ?? ''))
       .filter(Boolean);
     const tool = msg.toolName ?? (toolNames.length > 0 ? toolNames.join(', ') : null);
 
