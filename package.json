@@ -1,0 +1,55 @@
+{
+  "name": "agent-diary",
+  "version": "0.1.0",
+  "description": "Sentiment + interaction analysis of AI agent conversation logs. Generates an HTML report summarizing your daily conversations across multiple AI CLI tools.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "agent-diary": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build",
+    "start": "node dist/index.js"
+  },
+  "files": [
+    "dist/",
+    "templates/",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "ai",
+    "agent",
+    "diary",
+    "sentiment",
+    "analysis",
+    "hermes",
+    "claude",
+    "pi",
+    "opencode",
+    "cli",
+    "report",
+    "html"
+  ],
+  "author": "Viandika Fauzi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/viandikafauzi/agent-diary.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "franc": "^6.2.0",
+    "wink-sentiment": "^5.0.2"
+  }
+}
