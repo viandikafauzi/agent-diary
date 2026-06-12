@@ -40,7 +40,7 @@ Sources are auto-detected. If a CLI isn't installed, its parser is silently skip
 1. **Parsers** extract session logs from each AI CLI's local storage (one parser per source).
 2. **Analyzers** run three passes over agent (assistant) messages:
    - **Sentiment** — polarity scoring via wink-sentiment, normalized to [-1, 1].
-   - **Tone** — regex pattern matching for apology, confidence, uncertainty, helpfulness, self-correction, and question-asking. Supports **English, Indonesian, and Kazakh** with automatic language detection via [franc](https://github.com/wooorm/franc).
+   - **Tone** — regex pattern matching for apology, confidence, uncertainty, helpfulness, self-correction, and question-asking. Supports **English, Indonesian** with automatic language detection via [franc](https://github.com/wooorm/franc).
    - **Interaction** — session quality metrics: correction rate, clarification rate, clean exit rate.
 3. **Reporter** renders an interactive HTML dashboard with embedded CSS and JavaScript.
 
@@ -127,7 +127,6 @@ Key decisions:
 |----------|------|---------------|---------------------|
 | English | `en` | ✅ Full set | ✅ Full set |
 | Indonesian | `id` | ✅ Full set | ✅ Full set |
-| Kazakh | `kk` | ✅ Full set | ✅ Full set |
 
 Language is auto-detected per session via [franc](https://github.com/wooorm/franc). Falls back to English for unsupported languages.
 
