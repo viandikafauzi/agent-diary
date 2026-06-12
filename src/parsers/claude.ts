@@ -134,7 +134,7 @@ function findMatchingJsonlFiles(
     if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
     const filePath = path.join(projDir, entry.name);
     try {
-      const firstLine = readFirstLine(filePath);
+      const firstLine = readFirstLineWithTimestamp(filePath);
       if (!firstLine) continue;
       const obj = JSON.parse(firstLine) as ClaudeLine;
       const ts = obj.timestamp ? new Date(obj.timestamp).getTime() : NaN;
@@ -149,16 +149,24 @@ function findMatchingJsonlFiles(
   return results;
 }
 
-function readFirstLine(filePath: string): string | null {
+function readFirstLineWithTimestamp(filePath: string): string | null {
   try {
     const fd = fs.openSync(filePath, "r");
-    const buf = Buffer.alloc(4096);
+    const buf = Buffer.alloc(8192);
     const bytesRead = fs.readSync(fd, buf, 0, buf.length, 0);
     fs.closeSync(fd);
     const content = buf.toString("utf-8", 0, bytesRead);
-    const newlineIdx = content.indexOf("\n");
-    if (newlineIdx === -1) return content || null;
-    return content.slice(0, newlineIdx);
+    const lines = content.split("\n");
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const obj = JSON.parse(line);
+        if (obj.timestamp) return line;
+      } catch {
+        continue;
+      }
+    }
+    return null;
   } catch {
     return null;
   }

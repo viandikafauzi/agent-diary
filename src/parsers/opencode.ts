@@ -116,14 +116,13 @@ export function parseOpencode(dateStr: string): Session[] {
             ) {
               contentParts.push(partData.text);
             } else if (partType === "tool") {
-              const calls = partData.toolCalls as
-                | Array<Record<string, unknown>>
-                | undefined;
-              if (Array.isArray(calls)) {
-                for (const tc of calls) {
-                  toolCalls.push(tc);
-                }
-              }
+              // Each tool part is a single tool call
+              const state = partData.state as Record<string, unknown> | undefined;
+              toolCalls.push({
+                id: partData.callID,
+                name: partData.tool,
+                input: state?.input,
+              });
             } else if (partType === "step-finish") {
               finishReason =
                 (partData.finishReason as string) ??
@@ -132,8 +131,17 @@ export function parseOpencode(dateStr: string): Session[] {
             }
           }
 
-          if (msgData.model && typeof msgData.model === "string") {
-            lastModel = msgData.model;
+          if (msgData.model) {
+            if (typeof msgData.model === "string") {
+              lastModel = msgData.model;
+            } else if (typeof msgData.model === "object" && msgData.model !== null) {
+              const m = msgData.model as Record<string, unknown>;
+              lastModel =
+                (m.modelID as string) ??
+                (m.providerID && m.modelID
+                  ? `${m.providerID}/${m.modelID}`
+                  : lastModel);
+            }
           }
 
           toolCallCount += toolCalls.length;
@@ -148,7 +156,7 @@ export function parseOpencode(dateStr: string): Session[] {
                 ? (toolCalls[0].name as string) ?? null
                 : null,
             finishReason,
-            model: (msgData.model as string) ?? lastModel,
+            model: (typeof msgData.model === "string" ? msgData.model : null) ?? lastModel,
             tokenCount: null,
           });
         }
