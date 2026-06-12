@@ -2,3 +2,7 @@ output/
 *.pyc
 __pycache__/
 .venv/
+node_modules/
+dist/
+package-lock.json
+*.tgz

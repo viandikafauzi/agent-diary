@@ -1,0 +1,16 @@
+# Don't publish these to npm
+src/
+tsconfig.json
+.gitignore
+.venv/
+output/
+__pycache__/
+*.pyc
+*.md
+!README.md
+node_modules/
+analyzers/
+parsers/
+reporters/
+diary.py
+requirements.txt
