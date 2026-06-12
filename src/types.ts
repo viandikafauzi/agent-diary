@@ -15,7 +15,6 @@ export interface Session {
   model: string | null;
   startedAt: Date | null;
   endedAt: Date | null;
-  endReason: string | null;
   messages: Message[];
   messageCount: number;
   toolCallCount: number;

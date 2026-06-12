@@ -184,7 +184,6 @@ export function parseOpencode(dateStr: string): Session[] {
         endedAt: session.time_updated
           ? new Date(session.time_updated as number)
           : null,
-        endReason: null,
         messages,
         messageCount: messages.length,
         toolCallCount,

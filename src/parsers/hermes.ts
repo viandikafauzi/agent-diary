@@ -63,7 +63,6 @@ export function parseHermes(dateStr: string): Session[] {
         endedAt: session.ended_at
           ? new Date((session.ended_at as number) * 1000)
           : null,
-        endReason: (session.end_reason as string) ?? null,
         messages,
         messageCount: messages.length,
         toolCallCount: Math.max(

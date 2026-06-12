@@ -161,7 +161,6 @@ export function parsePi(dateStr: string): Session[] {
             messages.length > 0
               ? messages[messages.length - 1].timestamp
               : null,
-          endReason: null,
           messages,
           messageCount: messages.length,
           toolCallCount,

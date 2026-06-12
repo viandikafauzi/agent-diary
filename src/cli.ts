@@ -298,7 +298,7 @@ export function run(): void {
   console.log(`  Sessions:         ${interaction.totalSessions}`);
   console.log(`  Messages:         ${interaction.totalTurns}`);
   console.log(`  Overall Tone:     ${sentiment.dominantTone} (${sentiment.overallCompound.toFixed(3)})`);
-  console.log(`  Effectiveness:    ${effectiveness.score}/100 (${effectiveness.label})`);
+  console.log(`  Effectiveness:    ${(effectiveness.score / 100).toFixed(2)} (${effectiveness.label})`);
   console.log(`  Clean Exit Rate:  ${(interaction.cleanExitRatio * 100).toFixed(0)}%`);
   console.log(`  Report:           ${outputPath}`);
 }

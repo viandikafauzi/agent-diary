@@ -171,7 +171,6 @@ function parseSessionFile(filePath: string): Session | null {
   const parsedLines: ClaudeLine[] = [];
   let firstTimestamp: Date | null = null;
   let firstModel: string | null = null;
-  let endReason: string | null = null;
   let totalCost = 0;
   const seenIterations = new Set<string>();
   let totalInput = 0;
@@ -196,7 +195,6 @@ function parseSessionFile(filePath: string): Session | null {
 
     if (obj.message) {
       if (obj.message.model && !firstModel) firstModel = obj.message.model;
-      if (obj.message.stop_reason) endReason = obj.message.stop_reason;
 
       const iterations = obj.message.usage?.iterations;
       if (iterations) {
@@ -228,7 +226,6 @@ function parseSessionFile(filePath: string): Session | null {
     model: firstModel,
     startedAt: firstTimestamp,
     endedAt: messages[messages.length - 1].timestamp,
-    endReason,
     messages,
     messageCount: messages.length,
     toolCallCount,

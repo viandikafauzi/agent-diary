@@ -9,7 +9,10 @@ A bounded interaction between a user and an AI agent, identified by a unique ID,
 A single turn within a Session. Has a role (user, assistant, tool), content string, optional timestamp, optional tool calls, and optional token count.
 
 ### Source
-An AI CLI tool whose session data is parsed by Agent Diary. Supported sources: hermes, pi, claude, opencode. Each source has its own parser that reads from a specific local storage format (SQLite or JSONL).
+An AI CLI tool whose session data is parsed by Agent Diary. Supported sources: hermes, pi, claude, opencode. Each source has its own parser that reads from a specific local storage format (SQLite or JSONL). **Hard rule: 1:1 mapping between source and parser.** One source = one parser, one CLI.
+
+### Parser
+The implementation that reads a specific AI CLI's local storage and produces Session objects. Always exactly one parser per source. Parser details (SQLite vs JSONL, specific file paths, schema differences) are implementation details — not part of the domain model.
 
 ### Agent Message
 A message with role "assistant" — the AI agent's response. Sentiment, tone, and behavior analysis run exclusively on agent messages.
@@ -24,7 +27,13 @@ Behavioral signals detected in agent messages via regex pattern matching: apolog
 Session-level quality metrics derived from user message patterns: correction rate (user correcting the agent), clarification rate (user asking for clarification), clean exit rate (conversation ended positively).
 
 ### Effectiveness Index
-A composite score (0–100) combining sentiment compound, confidence net, and clean exit ratio. Labels: effective (≥60), balanced (≥40), struggling (<40). *(Note: current implementation uses 0–1 scale with different thresholds — see ADR-0002)*
+A composite score (range: [-0.7, 1.0]) combining sentiment compound (×0.4), confidence net (×0.3), and clean exit ratio (×0.3). Labels: effective (≥0.3), balanced (≥0), struggling (<0). Displayed as raw score with label, NOT as percentage. Range tooltip shown in HTML.
 
 ### Notable Chat
 An individual agent message flagged for extreme sentiment — top 5 most positive (best) or most negative (worst). Used in the HTML report to highlight standout moments.
+
+### Model
+The AI model identifier for a session (e.g., "deepseek-v4-pro"). Stored as metadata on each Session. Displayed in the session list for context. Does not track mid-conversation model changes (known limitation, future improvement).
+
+### Tokens
+Input and output token counts per session, sourced from each CLI's storage. All three fields are part of the domain model: `tokensInput`, `tokensOutput`, `totalTokens` (derived = input + output). `tokensReasoning` exists for sources that report it (Hermes).

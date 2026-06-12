@@ -17,6 +17,9 @@ interface SerializedSession {
   model: string | null;
   started: string;
   messages: SerializedMessage[];
+  tokensInput: number;
+  tokensOutput: number;
+  totalTokens: number;
 }
 
 function thousands(n: number): string {
@@ -94,6 +97,9 @@ function serializeSession(sess: Session): SerializedSession {
     model: sess.model,
     started,
     messages,
+    tokensInput: sess.tokensInput,
+    tokensOutput: sess.tokensOutput,
+    totalTokens: sess.totalTokens,
   };
 }
 
@@ -179,8 +185,9 @@ ${showFilter ? filterBarHtml(sources) : ''}
 
   <div class="card">
     <div class="label">Effectiveness</div>
-    <div class="value ${effectivenessClass(effectiveness.label)}">${effectiveness.score}%</div>
+    <div class="value ${effectivenessClass(effectiveness.label)}">${fmt2(effectiveness.score)}</div>
     <div class="subtext">${escapeHtml(effectiveness.label)}</div>
+    <div class="subtext" style="font-size:0.75em;opacity:0.7;">Range: -0.7 to 1.0 — higher is better</div>
   </div>
 
   <div class="card">
