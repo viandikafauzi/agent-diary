@@ -186,7 +186,7 @@ ${showFilter ? filterBarHtml(sources) : ''}
 
   <div class="card">
     <div class="label">Interaction</div>
-    <div class="value">${interaction.avgTurnsPerSession}</div>
+    <div class="value">${fmt2(interaction.avgTurnsPerSession)}</div>
     <div class="subtext">avg turns per session</div>
   </div>
 </div>
@@ -232,7 +232,7 @@ ${showFilter ? filterBarHtml(sources) : ''}
     </div>
     <div class="metric">
       <div class="metric-label">Avg Response Length</div>
-      <div class="metric-value">${thousands(tone.avgMessageLength)}</div>
+      <div class="metric-value">${fmt2(tone.avgMessageLength)}</div>
       <div class="metric-detail">chars per agent response</div>
     </div>
   </div>
@@ -249,7 +249,7 @@ ${showFilter ? filterBarHtml(sources) : ''}
     </div>
     <div class="metric">
       <div class="metric-label">Avg Turns</div>
-      <div class="metric-value">${interaction.avgTurnsPerSession}</div>
+      <div class="metric-value">${fmt2(interaction.avgTurnsPerSession)}</div>
       <div class="metric-detail">user-assistant exchanges per session</div>
     </div>
     <div class="metric">
