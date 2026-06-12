@@ -30,6 +30,8 @@ export function analyzeInteraction(conversations: Conversation[]): InteractionRe
   for (const conv of conversations) {
     const messages = conv.messages;
 
+    if (messages.length === 0) continue;
+
     for (const msg of messages) {
       if (msg.content.length === 0) continue;
 
