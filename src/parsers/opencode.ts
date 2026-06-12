@@ -23,7 +23,7 @@ export function parseOpencode(dateStr: string): Session[] {
 
     const dbSessions = db
       .prepare(
-        `SELECT * FROM session WHERE time_created >= ? AND time_created <= ? ORDER BY time_created ASC`,
+        `SELECT * FROM session WHERE time_created >= ? AND time_created <= ? ORDER BY time_created DESC`,
       )
       .all(startTimestamp, endTimestamp) as Array<Record<string, unknown>>;
 

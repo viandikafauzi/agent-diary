@@ -16,7 +16,7 @@ export function parseHermes(dateStr: string): Session[] {
 
     const dbSessions = db
       .prepare(
-        `SELECT * FROM sessions WHERE started_at >= ? AND started_at <= ? ORDER BY started_at ASC`,
+        `SELECT * FROM sessions WHERE started_at >= ? AND started_at <= ? ORDER BY started_at DESC`,
       )
       .all(startTimestamp, endTimestamp) as Array<Record<string, unknown>>;
 

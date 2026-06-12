@@ -252,7 +252,7 @@ export function run(): void {
   allSessions.sort((a, b) => {
     const ta = a.startedAt?.getTime() ?? 0;
     const tb = b.startedAt?.getTime() ?? 0;
-    return ta - tb;
+    return tb - ta;
   });
 
   /* ---- none found ---- */

@@ -177,7 +177,7 @@ export function parsePi(dateStr: string): Session[] {
     sessions.sort((a, b) => {
       const ta = a.startedAt?.getTime() ?? 0;
       const tb = b.startedAt?.getTime() ?? 0;
-      return ta - tb;
+      return tb - ta;
     });
 
     return sessions;
