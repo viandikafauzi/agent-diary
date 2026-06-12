@@ -70,7 +70,12 @@ function serializeConversation(conv: Conversation): SerializedConv {
   const started = conv.startedAt ? conv.startedAt.toISOString() : '';
   const messages: SerializedMessage[] = conv.messages.map((msg) => {
     const toolNames = msg.toolCalls
-      .map((tc) => String(tc.name ?? tc.function ?? ''))
+      .map((tc) => {
+        if (typeof tc.name === 'string') return tc.name;
+        if (tc.function && typeof tc.function === 'object' && typeof (tc.function as Record<string, unknown>).name === 'string') return (tc.function as Record<string, unknown>).name as string;
+        if (typeof tc.function === 'string') return tc.function;
+        return '';
+      })
       .filter(Boolean);
     const tool = msg.toolName ?? (toolNames.length > 0 ? toolNames.join(', ') : null);
 
