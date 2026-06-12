@@ -1,6 +1,6 @@
 {
   "name": "agent-diary",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Sentiment + interaction analysis of AI agent conversation logs. Generates an HTML report summarizing your daily conversations across multiple AI CLI tools.",
   "type": "module",
   "main": "./dist/index.js",
@@ -44,7 +44,7 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^22.0.0",
+    "@types/node": "^22.19.21",
     "typescript": "^5.5.0"
   },
   "dependencies": {
