@@ -2,11 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AnalysisResult, Session, NotableChat } from '../types.js';
+import { analyzeSentiment } from '../analyzers/sentiment.js';
+import { analyzeTone } from '../analyzers/tone.js';
+import { analyzeInteraction } from '../analyzers/interaction.js';
 
 interface SerializedMessage {
   role: string;
   content: string;
   tool: string | null;
+  toolInput: string | null;
   tool_result_attr: string | null;
   finish_reason: string | null;
   ts: string;
@@ -69,6 +73,81 @@ function toneScorePillClass(score: number): string {
   return 'ok';
 }
 
+function formatToolInput(tc: Record<string, unknown>): string | null {
+  // Extract input/arguments from tool call
+  let input: Record<string, unknown> | undefined;
+  
+  if (tc.input && typeof tc.input === 'object') {
+    input = tc.input as Record<string, unknown>;
+  } else if (tc.arguments && typeof tc.arguments === 'object') {
+    input = tc.arguments as Record<string, unknown>;
+  } else if (tc.function && typeof tc.function === 'object') {
+    const fn = tc.function as Record<string, unknown>;
+    if (typeof fn.arguments === 'string') {
+      try {
+        input = JSON.parse(fn.arguments);
+      } catch {
+        return fn.arguments as string;
+      }
+    } else if (fn.arguments && typeof fn.arguments === 'object') {
+      input = fn.arguments as Record<string, unknown>;
+    }
+  }
+  
+  if (!input) return null;
+  
+  // Get tool name for context-aware formatting
+  let toolName = '';
+  if (typeof tc.name === 'string') toolName = tc.name;
+  else if (tc.function && typeof tc.function === 'object' && typeof (tc.function as Record<string, unknown>).name === 'string') toolName = (tc.function as Record<string, unknown>).name as string;
+  
+  // Format based on tool type for better readability
+  const name = toolName.toLowerCase();
+  
+  if (name === 'bash' || name === 'execute' || name === 'execute_command') {
+    // For bash commands, show the command prominently
+    const cmd = input.command ?? input.cmd ?? input.script;
+    if (typeof cmd === 'string') return cmd;
+  }
+  
+  if (name === 'read' || name === 'read_file') {
+    const filePath = input.path ?? input.file_path ?? input.filePath;
+    if (typeof filePath === 'string') return filePath;
+  }
+  
+  if (name === 'write' || name === 'create_file' || name === 'write_file') {
+    const filePath = input.path ?? input.file_path ?? input.filePath;
+    if (typeof filePath === 'string') return filePath;
+  }
+  
+  if (name === 'edit' || name === 'replace' || name === 'edit_file') {
+    const filePath = input.path ?? input.file_path ?? input.filePath ?? input.filename;
+    if (typeof filePath === 'string') return filePath;
+  }
+  
+  if (name === 'search' || name === 'grep' || name === 'find') {
+    const query = input.query ?? input.pattern ?? input.search;
+    if (typeof query === 'string') return query;
+  }
+  
+  // Default: show key params
+  const keys = Object.keys(input);
+  if (keys.length === 0) return null;
+  
+  // Try to find a 'main' param like command, path, query, text, content
+  for (const key of ['command', 'cmd', 'path', 'query', 'text', 'content', 'url', 'name', 'id']) {
+    if (input[key] !== undefined) {
+      const val = input[key];
+      if (typeof val === 'string') return val.length > 200 ? val.slice(0, 200) + '...' : val;
+      return String(val);
+    }
+  }
+  
+  // Fallback: compact JSON
+  const json = JSON.stringify(input);
+  return json.length > 200 ? json.slice(0, 200) + '...' : json;
+}
+
 function serializeSession(sess: Session): SerializedSession {
   const started = sess.startedAt ? sess.startedAt.toISOString() : '';
   const messages: SerializedMessage[] = sess.messages.map((msg) => {
@@ -81,11 +160,18 @@ function serializeSession(sess: Session): SerializedSession {
       })
       .filter(Boolean);
     const tool = msg.toolName ?? (toolNames.length > 0 ? toolNames.join(', ') : null);
+    
+    // Get formatted tool input from first tool call
+    let toolInput: string | null = null;
+    if (msg.toolCalls.length > 0) {
+      toolInput = formatToolInput(msg.toolCalls[0]);
+    }
 
     return {
       role: msg.role,
       content: msg.content,
       tool,
+      toolInput,
       tool_result_attr: null,
       finish_reason: msg.finishReason,
       ts: msg.timestamp ? msg.timestamp.toISOString() : '',
@@ -115,6 +201,96 @@ function loadCSS(): string {
   const templateContent = fs.readFileSync(templatePath, 'utf-8');
   const styleMatch = templateContent.match(/<style>([\s\S]*?)<\/style>/);
   return styleMatch ? styleMatch[1].trim() : '';
+}
+
+function computeEffectivenessIndex(
+  sentimentResult: { overallCompound: number },
+  toneResult: { confidenceNet: number },
+  interactionResult: { cleanExitRatio: number },
+): import('../types.js').EffectivenessIndex {
+  const sentScore = ((sentimentResult.overallCompound + 1) / 2) * 40;
+  const confScore = ((toneResult.confidenceNet + 1) / 2) * 30;
+  const exitScore = interactionResult.cleanExitRatio * 30;
+  const score = Math.min(100, Math.max(0, Math.round(sentScore + confScore + exitScore)));
+  let label: import('../types.js').EffectivenessIndex['label'];
+  if (score >= 70) label = 'effective';
+  else if (score >= 40) label = 'balanced';
+  else label = 'struggling';
+  return { score, label };
+}
+
+function buildSourceFilterData(
+  sessions: Session[],
+  sources: string[],
+  sentiment: import('../types.js').SentimentResult,
+  tone: import('../types.js').ToneResult,
+  interaction: import('../types.js').InteractionResult,
+  effectiveness: import('../types.js').EffectivenessIndex,
+  totalSessions: number,
+  totalMessages: number,
+): Record<string, unknown> {
+  const data: Record<string, unknown> = {};
+
+  data['all'] = {
+    cards: {
+      'overall-tone': { value: sentiment.dominantTone, subtext: 'compound ' + fmt2(sentiment.overallCompound), cls: polarityClass(sentiment.dominantTone) },
+      'effectiveness-score': { value: fmt2(effectiveness.score), subtext: effectiveness.label, cls: effectivenessClass(effectiveness.label) },
+      'sessions-count': { value: thousands(totalSessions), subtext: thousands(totalMessages) + ' messages' },
+      'avg-turns': { value: fmt2(interaction.avgTurnsPerSession), subtext: 'avg turns per session' },
+    },
+    agentBehavior: {
+      'apology-rate': { value: pct(tone.apologyRate) + '%', detail: thousands(tone.apologyCount) + ' apologies in ' + thousands(tone.totalAgentMessages) + ' messages' },
+      'confidence': { value: fmt2(tone.confidenceNet), detail: thousands(tone.confidenceCount) + ' confident vs ' + thousands(tone.uncertaintyCount) + ' uncertain markers' },
+      'helpfulness': { value: pct(tone.helpfulnessRate) + '%', detail: thousands(tone.helpfulnessCount) + ' helpful markers' },
+      'self-correction': { value: pct(tone.selfCorrectionRate) + '%', detail: thousands(tone.selfCorrectionCount) + ' backtrack markers' },
+      'agent-questions': { value: pct(tone.questionRate) + '%', detail: thousands(tone.questionCount) + ' clarification questions asked' },
+      'avg-response-length': { value: fmt2(tone.avgMessageLength), detail: 'chars per agent response' },
+    },
+    interactionQuality: {
+      'iq-sessions': { value: thousands(interaction.totalSessions), detail: thousands(interaction.cleanExits) + ' clean exits, ' + thousands(interaction.danglingExits) + ' dangling' },
+      'iq-avg-turns': { value: fmt2(interaction.avgTurnsPerSession), detail: 'user-assistant exchanges per session' },
+      'correction-rate': { value: pct(interaction.correctionRatio) + '%', detail: thousands(interaction.totalCorrections) + ' correction messages / ' + thousands(interaction.totalTurns) + ' turns' },
+      'clarification-rate': { value: pct(interaction.clarificationRatio) + '%', detail: thousands(interaction.totalClarifications) + ' clarification questions / ' + thousands(interaction.totalTurns) + ' turns' },
+      'redo-rate': { value: '' + interaction.avgRedosPerSession, detail: 'avg repeated tool calls per session' },
+      'exit-quality': { value: pct(interaction.cleanExitRatio) + '%', detail: 'clean session end rate' },
+    },
+  };
+
+  for (const src of sources) {
+    const srcSessions = sessions.filter(s => s.source === src);
+    if (srcSessions.length === 0) continue;
+    const srcSentiment = analyzeSentiment(srcSessions);
+    const srcTone = analyzeTone(srcSessions);
+    const srcInteraction = analyzeInteraction(srcSessions);
+    const srcEffectiveness = computeEffectivenessIndex(srcSentiment, srcTone, srcInteraction);
+    const srcTotalMessages = srcTone.totalAgentMessages + srcSessions.length;
+    data[src] = {
+      cards: {
+        'overall-tone': { value: srcSentiment.dominantTone, subtext: 'compound ' + fmt2(srcSentiment.overallCompound), cls: polarityClass(srcSentiment.dominantTone) },
+        'effectiveness-score': { value: fmt2(srcEffectiveness.score), subtext: srcEffectiveness.label, cls: effectivenessClass(srcEffectiveness.label) },
+        'sessions-count': { value: thousands(srcSessions.length), subtext: thousands(srcTotalMessages) + ' messages' },
+        'avg-turns': { value: fmt2(srcInteraction.avgTurnsPerSession), subtext: 'avg turns per session' },
+      },
+      agentBehavior: {
+        'apology-rate': { value: pct(srcTone.apologyRate) + '%', detail: thousands(srcTone.apologyCount) + ' apologies in ' + thousands(srcTone.totalAgentMessages) + ' messages' },
+        'confidence': { value: fmt2(srcTone.confidenceNet), detail: thousands(srcTone.confidenceCount) + ' confident vs ' + thousands(srcTone.uncertaintyCount) + ' uncertain markers' },
+        'helpfulness': { value: pct(srcTone.helpfulnessRate) + '%', detail: thousands(srcTone.helpfulnessCount) + ' helpful markers' },
+        'self-correction': { value: pct(srcTone.selfCorrectionRate) + '%', detail: thousands(srcTone.selfCorrectionCount) + ' backtrack markers' },
+        'agent-questions': { value: pct(srcTone.questionRate) + '%', detail: thousands(srcTone.questionCount) + ' clarification questions asked' },
+        'avg-response-length': { value: fmt2(srcTone.avgMessageLength), detail: 'chars per agent response' },
+      },
+      interactionQuality: {
+        'iq-sessions': { value: thousands(srcInteraction.totalSessions), detail: thousands(srcInteraction.cleanExits) + ' clean exits, ' + thousands(srcInteraction.danglingExits) + ' dangling' },
+        'iq-avg-turns': { value: fmt2(srcInteraction.avgTurnsPerSession), detail: 'user-assistant exchanges per session' },
+        'correction-rate': { value: pct(srcInteraction.correctionRatio) + '%', detail: thousands(srcInteraction.totalCorrections) + ' correction messages / ' + thousands(srcInteraction.totalTurns) + ' turns' },
+        'clarification-rate': { value: pct(srcInteraction.clarificationRatio) + '%', detail: thousands(srcInteraction.totalClarifications) + ' clarification questions / ' + thousands(srcInteraction.totalTurns) + ' turns' },
+        'redo-rate': { value: '' + srcInteraction.avgRedosPerSession, detail: 'avg repeated tool calls per session' },
+        'exit-quality': { value: pct(srcInteraction.cleanExitRatio) + '%', detail: 'clean session end rate' },
+      },
+    };
+  }
+
+  return data;
 }
 
 function generateHtml(date: string, result: AnalysisResult, css: string): string {
@@ -157,6 +333,11 @@ function generateHtml(date: string, result: AnalysisResult, css: string): string
 
   const sessionsJson = buildSessionsJson(sessions);
 
+  const sourceFilterData = buildSourceFilterData(
+    sessions, sources, sentiment, tone, interaction, effectiveness, totalSessions, totalMessages
+  );
+  const sourceFilterJson = JSON.stringify(sourceFilterData);
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -169,7 +350,7 @@ function generateHtml(date: string, result: AnalysisResult, css: string): string
 
 <div class="header">
   <h1>Agent Diary</h1>
-  <div class="sub">${escapeHtml(date)} &middot; generated ${escapeHtml(generatedAt)}</div>
+   <div class="sub">${escapeHtml(date)} &middot; generated ${escapeHtml(new Date(generatedAt).toLocaleString())}</div>
   ${sourceBadgesHtml(sources)}
 </div>
 
@@ -179,26 +360,26 @@ ${showFilter ? filterBarHtml(sources) : ''}
 <div class="cards">
   <div class="card">
     <div class="label">Overall Tone</div>
-    <div class="value ${polarityClass(sentiment.dominantTone)}">${escapeHtml(sentiment.dominantTone)}</div>
+    <div class="value ${polarityClass(sentiment.dominantTone)}" data-metric="overall-tone">${escapeHtml(sentiment.dominantTone)}</div>
     <div class="subtext">compound ${fmt2(sentiment.overallCompound)}</div>
   </div>
 
   <div class="card">
     <div class="label">Effectiveness</div>
-    <div class="value ${effectivenessClass(effectiveness.label)}">${fmt2(effectiveness.score)}</div>
+    <div class="value ${effectivenessClass(effectiveness.label)}" data-metric="effectiveness-score">${fmt2(effectiveness.score)}</div>
     <div class="subtext">${escapeHtml(effectiveness.label)}</div>
     <div class="subtext" style="font-size:0.75em;opacity:0.7;">Range: -0.7 to 1.0 — higher is better</div>
   </div>
 
   <div class="card">
     <div class="label">Sessions</div>
-    <div class="value">${thousands(totalSessions)}</div>
+    <div class="value" data-metric="sessions-count">${thousands(totalSessions)}</div>
     <div class="subtext">${thousands(totalMessages)} messages</div>
   </div>
 
   <div class="card">
     <div class="label">Interaction</div>
-    <div class="value">${fmt2(interaction.avgTurnsPerSession)}</div>
+    <div class="value" data-metric="avg-turns">${fmt2(interaction.avgTurnsPerSession)}</div>
     <div class="subtext">avg turns per session</div>
   </div>
 </div>
@@ -219,32 +400,32 @@ ${showFilter ? filterBarHtml(sources) : ''}
   <div class="metric-grid">
     <div class="metric">
       <div class="metric-label">Apology Rate</div>
-      <div class="metric-value">${pct(tone.apologyRate)}%</div>
+      <div class="metric-value" data-metric="apology-rate">${pct(tone.apologyRate)}%</div>
       <div class="metric-detail">${thousands(tone.apologyCount)} apologies in ${thousands(tone.totalAgentMessages)} messages</div>
     </div>
     <div class="metric">
       <div class="metric-label">Confidence</div>
-      <div class="metric-value">${fmt2(tone.confidenceNet)}</div>
+      <div class="metric-value" data-metric="confidence">${fmt2(tone.confidenceNet)}</div>
       <div class="metric-detail">${thousands(tone.confidenceCount)} confident vs ${thousands(tone.uncertaintyCount)} uncertain markers</div>
     </div>
     <div class="metric">
       <div class="metric-label">Helpfulness</div>
-      <div class="metric-value">${pct(tone.helpfulnessRate)}%</div>
+      <div class="metric-value" data-metric="helpfulness">${pct(tone.helpfulnessRate)}%</div>
       <div class="metric-detail">${thousands(tone.helpfulnessCount)} helpful markers</div>
     </div>
     <div class="metric">
       <div class="metric-label">Self-correction</div>
-      <div class="metric-value">${pct(tone.selfCorrectionRate)}%</div>
+      <div class="metric-value" data-metric="self-correction">${pct(tone.selfCorrectionRate)}%</div>
       <div class="metric-detail">${thousands(tone.selfCorrectionCount)} backtrack markers</div>
     </div>
     <div class="metric">
       <div class="metric-label">Agent Questions</div>
-      <div class="metric-value">${pct(tone.questionRate)}%</div>
+      <div class="metric-value" data-metric="agent-questions">${pct(tone.questionRate)}%</div>
       <div class="metric-detail">${thousands(tone.questionCount)} clarification questions asked</div>
     </div>
     <div class="metric">
       <div class="metric-label">Avg Response Length</div>
-      <div class="metric-value">${fmt2(tone.avgMessageLength)}</div>
+      <div class="metric-value" data-metric="avg-response-length">${fmt2(tone.avgMessageLength)}</div>
       <div class="metric-detail">chars per agent response</div>
     </div>
   </div>
@@ -256,32 +437,32 @@ ${showFilter ? filterBarHtml(sources) : ''}
   <div class="metric-grid">
     <div class="metric">
       <div class="metric-label">Sessions</div>
-      <div class="metric-value">${thousands(interaction.totalSessions)}</div>
+      <div class="metric-value" data-metric="iq-sessions">${thousands(interaction.totalSessions)}</div>
       <div class="metric-detail">${thousands(interaction.cleanExits)} clean exits, ${thousands(interaction.danglingExits)} dangling</div>
     </div>
     <div class="metric">
       <div class="metric-label">Avg Turns</div>
-      <div class="metric-value">${fmt2(interaction.avgTurnsPerSession)}</div>
+      <div class="metric-value" data-metric="iq-avg-turns">${fmt2(interaction.avgTurnsPerSession)}</div>
       <div class="metric-detail">user-assistant exchanges per session</div>
     </div>
     <div class="metric">
       <div class="metric-label">Correction Rate</div>
-      <div class="metric-value">${pct(interaction.correctionRatio)}%</div>
+      <div class="metric-value" data-metric="correction-rate">${pct(interaction.correctionRatio)}%</div>
       <div class="metric-detail">${thousands(interaction.totalCorrections)} correction messages / ${thousands(interaction.totalTurns)} turns</div>
     </div>
     <div class="metric">
       <div class="metric-label">Clarification Rate</div>
-      <div class="metric-value">${pct(interaction.clarificationRatio)}%</div>
+      <div class="metric-value" data-metric="clarification-rate">${pct(interaction.clarificationRatio)}%</div>
       <div class="metric-detail">${thousands(interaction.totalClarifications)} clarification questions / ${thousands(interaction.totalTurns)} turns</div>
     </div>
     <div class="metric">
       <div class="metric-label">Re-do Rate</div>
-      <div class="metric-value">${interaction.avgRedosPerSession}</div>
+      <div class="metric-value" data-metric="redo-rate">${interaction.avgRedosPerSession}</div>
       <div class="metric-detail">avg repeated tool calls per session</div>
     </div>
     <div class="metric">
       <div class="metric-label">Exit Quality</div>
-      <div class="metric-value">${pct(interaction.cleanExitRatio)}%</div>
+      <div class="metric-value" data-metric="exit-quality">${pct(interaction.cleanExitRatio)}%</div>
       <div class="metric-detail">clean session end rate</div>
     </div>
   </div>
@@ -326,7 +507,19 @@ ${allSessionsHtml(sessions, sentiment)}
 
 <script>
 var SESSIONS = ${sessionsJson};
+var SOURCE_DATA = ${sourceFilterJson};
 var activeFilter = 'all';
+
+function formatLocalTime(isoStr) {
+  if (!isoStr) return '';
+  try {
+    var d = new Date(isoStr);
+    if (isNaN(d.getTime())) return isoStr;
+    return d.toLocaleString();
+  } catch(e) {
+    return isoStr;
+  }
+}
 
 function openSession(id) {
   var sess = SESSIONS[id];
@@ -335,7 +528,7 @@ function openSession(id) {
   var title = document.getElementById('modalTitle');
   title.innerHTML = '<span class="source-badge ' + escapeHtml(sess.source) + '">' + escapeHtml(sess.source) + '</span> '
     + '<span>' + escapeHtml(sess.model || 'unknown') + '</span> '
-    + '<span class="meta">' + escapeHtml(sess.started || '') + ' &middot; ' + sess.messages.length + ' msgs</span>';
+    + '<span class="meta">' + escapeHtml(formatLocalTime(sess.started)) + ' &middot; ' + sess.messages.length + ' msgs</span>';
 
   var body = document.getElementById('modalBody');
   var html = '';
@@ -354,13 +547,18 @@ function openSession(id) {
     if (msg.finish_reason) {
       html += '<span class="tool-info">stop: ' + escapeHtml(msg.finish_reason) + '</span>';
     }
-    html += '<span class="msg-ts">' + escapeHtml(msg.ts) + '</span>';
+    html += '<span class="msg-ts">' + escapeHtml(formatLocalTime(msg.ts)) + '</span>';
     html += '</div>';
     var display = null;
     if (msg.content) {
       display = msg.content;
     } else if (msg.tool) {
-      display = '[tool calls: ' + msg.tool + ']';
+      // Show tool name with its actual input/command
+      if (msg.toolInput) {
+        display = msg.tool + ': ' + msg.toolInput;
+      } else {
+        display = msg.tool;
+      }
     }
     if (display) {
       var truncated = display.length > 2000 ? display.slice(0, 2000) + '\\n\\n[truncated \\u2014 ' + display.length + ' chars]' : display;
@@ -399,6 +597,58 @@ function setFilter(source) {
   var btns = document.querySelectorAll('.filter-btn');
   btns.forEach(function(b) {
     b.classList.toggle('active', b.getAttribute('data-source') === source);
+  });
+
+  var sdata = SOURCE_DATA[source] || SOURCE_DATA['all'];
+
+  for (var key in sdata.cards) {
+    var el = document.querySelector('[data-metric="' + key + '"]');
+    if (el) {
+      var c = sdata.cards[key];
+      el.textContent = c.value;
+      if (c.cls) el.className = 'value ' + c.cls;
+      var card = el.closest('.card');
+      if (card) {
+        var subtexts = card.querySelectorAll('.subtext');
+        if (subtexts.length > 0) subtexts[0].textContent = c.subtext;
+      }
+    }
+  }
+
+  for (var key in sdata.agentBehavior) {
+    var el = document.querySelector('[data-metric="' + key + '"]');
+    if (el) {
+      var m = sdata.agentBehavior[key];
+      el.textContent = m.value;
+      var metric = el.closest('.metric');
+      if (metric) {
+        var detail = metric.querySelector('.metric-detail');
+        if (detail) detail.textContent = m.detail;
+      }
+    }
+  }
+
+  for (var key in sdata.interactionQuality) {
+    var el = document.querySelector('[data-metric="' + key + '"]');
+    if (el) {
+      var m = sdata.interactionQuality[key];
+      el.textContent = m.value;
+      var metric = el.closest('.metric');
+      if (metric) {
+        var detail = metric.querySelector('.metric-detail');
+        if (detail) detail.textContent = m.detail;
+      }
+    }
+  }
+
+  var rows = document.querySelectorAll('.source-table tbody tr');
+  rows.forEach(function(row) {
+    var badge = row.querySelector('.source-badge');
+    if (source === 'all' || (badge && badge.textContent.trim() === source)) {
+      row.style.opacity = '1';
+    } else {
+      row.style.opacity = '0.3';
+    }
   });
 
   var items = document.querySelectorAll('[data-source]');

@@ -1,3 +1,4 @@
+import { exec } from "node:child_process";
 import { parseArgs } from "node:util";
 import path from "node:path";
 import { detectSources } from "./parsers/detector.js";
@@ -252,7 +253,7 @@ export function run(): void {
   allSessions.sort((a, b) => {
     const ta = a.startedAt?.getTime() ?? 0;
     const tb = b.startedAt?.getTime() ?? 0;
-    return ta - tb;
+    return tb - ta;
   });
 
   /* ---- none found ---- */
@@ -286,10 +287,13 @@ export function run(): void {
   /* ---- render report ---- */
   const outputPath = values.output
     ? (values.output as string)
-    : path.join("output", `diary-${date}.html`);
+    : `diary-${date}.html`;
 
   renderReport(date, result, outputPath);
   console.log(`\n✔ Report written to ${outputPath}`);
+
+  /* ---- open in browser ---- */
+  openInBrowser(outputPath);
 
   /* ---- console summary ---- */
   const sourceNames = Object.keys(sourcesData).join(", ");
@@ -301,4 +305,27 @@ export function run(): void {
   console.log(`  Effectiveness:    ${(effectiveness.score / 100).toFixed(2)} (${effectiveness.label})`);
   console.log(`  Clean Exit Rate:  ${(interaction.cleanExitRatio * 100).toFixed(0)}%`);
   console.log(`  Report:           ${outputPath}`);
+}
+
+/**
+ * Open a file in the user's default browser, cross-platform.
+ */
+function openInBrowser(filePath: string): void {
+  const resolved = path.resolve(filePath);
+  const platform = process.platform;
+
+  let command: string;
+  if (platform === "win32") {
+    command = `cmd /c start "" "${resolved}"`;
+  } else if (platform === "darwin") {
+    command = `open "${resolved}"`;
+  } else {
+    command = `xdg-open "${resolved}"`;
+  }
+
+  exec(command, (err) => {
+    if (err) {
+      console.warn(`  \u26a0 Could not open browser: ${err.message}`);
+    }
+  });
 }

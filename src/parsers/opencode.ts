@@ -1,8 +1,7 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
 import type { Session, Message } from "../types.js";
+import { opencodeDbPath } from "../paths.js";
 
 export function parseOpencode(dateStr: string): Session[] {
   try {
@@ -10,20 +9,14 @@ export function parseOpencode(dateStr: string): Session[] {
     const endTimestamp = Date.parse(dateStr + "T23:59:59Z");
     if (isNaN(startTimestamp) || isNaN(endTimestamp)) return [];
 
-    const dbPath = path.join(
-      os.homedir(),
-      ".local",
-      "share",
-      "opencode",
-      "opencode.db",
-    );
+    const dbPath = opencodeDbPath();
     if (!fs.existsSync(dbPath)) return [];
 
     const db = new Database(dbPath, { readonly: true });
 
     const dbSessions = db
       .prepare(
-        `SELECT * FROM session WHERE time_created >= ? AND time_created <= ? ORDER BY time_created ASC`,
+        `SELECT * FROM session WHERE time_created >= ? AND time_created <= ? ORDER BY time_created DESC`,
       )
       .all(startTimestamp, endTimestamp) as Array<Record<string, unknown>>;
 
@@ -64,6 +57,8 @@ export function parseOpencode(dateStr: string): Session[] {
 
         if (role === "user") {
           const contentParts: string[] = [];
+          let hasToolResult = false;
+          let hasUserText = false;
           for (const part of parts) {
             let partData: Record<string, unknown> = {};
             try {
@@ -74,13 +69,16 @@ export function parseOpencode(dateStr: string): Session[] {
 
             if (partData.type === "text" && !partData.synthetic) {
               contentParts.push((partData.text as string) ?? "");
+              hasUserText = true;
             } else if (partData.type === "tool-result" && partData.text) {
               contentParts.push((partData.text as string) ?? "");
+              hasToolResult = true;
             }
           }
 
+          // Mark as toolResult if it only contains tool results (no user text)
           messages.push({
-            role: "user",
+            role: hasToolResult && !hasUserText ? "toolResult" : "user",
             content: contentParts.join("\n"),
             timestamp,
             toolCalls: [],

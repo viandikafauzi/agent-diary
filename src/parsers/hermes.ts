@@ -1,22 +1,21 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
 import type { Session, Message } from "../types.js";
+import { hermesStateDbPath } from "../paths.js";
 
 export function parseHermes(dateStr: string): Session[] {
   try {
     const startTimestamp = Date.parse(dateStr + "T00:00:00Z") / 1000;
     const endTimestamp = Date.parse(dateStr + "T23:59:59Z") / 1000;
 
-    const dbPath = path.join(os.homedir(), ".hermes", "state.db");
+    const dbPath = hermesStateDbPath();
     if (!fs.existsSync(dbPath)) return [];
 
     const db = new Database(dbPath, { readonly: true });
 
     const dbSessions = db
       .prepare(
-        `SELECT * FROM sessions WHERE started_at >= ? AND started_at <= ? ORDER BY started_at ASC`,
+        `SELECT * FROM sessions WHERE started_at >= ? AND started_at <= ? ORDER BY started_at DESC`,
       )
       .all(startTimestamp, endTimestamp) as Array<Record<string, unknown>>;
 

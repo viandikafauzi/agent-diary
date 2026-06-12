@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import type { Session, Message } from "../types.js";
+import { claudeProjectsDir, claudeDesktopSessionsDir } from "../paths.js";
 
 interface ClaudeLine {
   type: string;
@@ -43,35 +43,88 @@ export function parseClaude(dateStr: string): Session[] {
     const endTimestamp = Date.parse(dateStr + "T23:59:59Z");
     if (isNaN(startTimestamp) || isNaN(endTimestamp)) return [];
 
-    const projectsDir = path.join(os.homedir(), ".claude", "projects");
-    if (!fs.existsSync(projectsDir)) return [];
-
-    const projectDirs = readSubdirs(projectsDir);
     const sessions: Session[] = [];
 
-    for (const projDir of projectDirs) {
-      const matchingSessions = findMatchingSessions(projDir, startTimestamp, endTimestamp);
+    // ── Source 1: Claude Code CLI ( ~/.claude/projects/ ) ────────────
+    const projectsDir = claudeProjectsDir();
+    if (fs.existsSync(projectsDir)) {
+      const projectDirs = readSubdirs(projectsDir);
+      for (const projDir of projectDirs) {
+        parseAllInDir(projDir, startTimestamp, endTimestamp, sessions);
+      }
+    }
 
-      for (const sessionEntry of matchingSessions) {
-        try {
-          const sess = parseSessionFile(sessionEntry);
-          if (sess) sessions.push(sess);
-        } catch {
-          // skip unparseable sessions
-        }
+    // ── Source 2: Claude Desktop local-agent sessions ────────────────
+    const desktopDir = claudeDesktopSessionsDir();
+    if (desktopDir && fs.existsSync(desktopDir)) {
+      const sessionDirs = findDesktopSessionDirs(desktopDir);
+      for (const sessionPath of sessionDirs) {
+        parseAllInDir(sessionPath, startTimestamp, endTimestamp, sessions);
       }
     }
 
     sessions.sort((a, b) => {
       const ta = a.startedAt?.getTime() ?? 0;
       const tb = b.startedAt?.getTime() ?? 0;
-      return ta - tb;
+      return tb - ta;
     });
 
     return sessions;
   } catch {
     return [];
   }
+}
+
+/**
+ * Walk a single project / output directory, find all matching JSONL files
+ * and parse them into sessions.
+ */
+function parseAllInDir(
+  dir: string,
+  startMs: number,
+  endMs: number,
+  acc: Session[],
+): void {
+  const matchingSessions = findMatchingSessions(dir, startMs, endMs);
+  for (const sessionEntry of matchingSessions) {
+    try {
+      const sess = parseSessionFile(sessionEntry);
+      if (sess) acc.push(sess);
+    } catch {
+      // skip unparseable sessions
+    }
+  }
+}
+
+/**
+ * Walk the Claude Desktop session tree and collect all
+ * `.claude/projects/<name>/` directories that contain JSONL files.
+ *
+ * Directory layout:
+ *   local-agent-mode-sessions/{org}/{workspace}/local_{uuid}/
+ *     .claude/projects/{project_name}/
+ *       {session_id}.jsonl
+ */
+function findDesktopSessionDirs(root: string): string[] {
+  const result: string[] = [];
+  try {
+    const orgDirs = readSubdirs(root);
+    for (const orgDir of orgDirs) {
+      const workspaceDirs = readSubdirs(orgDir);
+      for (const wsDir of workspaceDirs) {
+        const localDirs = readSubdirs(wsDir);
+        for (const localDir of localDirs) {
+          const projectsPath = path.join(localDir, ".claude", "projects");
+          if (!fs.existsSync(projectsPath)) continue;
+          const projectDirs = readSubdirs(projectsPath);
+          result.push(...projectDirs);
+        }
+      }
+    }
+  } catch {
+    // ignore inaccessible directories
+  }
+  return result;
 }
 
 function readSubdirs(dir: string): string[] {
@@ -257,9 +310,9 @@ function buildMessages(
     const msg = obj.message;
 
     if (type === "user") {
-      const content = extractUserContent(msg);
+      const { content, isToolResult } = extractUserContent(msg);
       messages.push({
-        role: "user",
+        role: isToolResult ? "toolResult" : "user",
         content,
         timestamp: parseTimestamp(obj.timestamp),
         toolCalls: [],
@@ -286,23 +339,28 @@ function buildMessages(
   return messages;
 }
 
-function extractUserContent(msg: ClaudeMessage): string {
-  if (typeof msg.content === "string") return msg.content;
+function extractUserContent(msg: ClaudeMessage): { content: string; isToolResult: boolean } {
+  if (typeof msg.content === "string") return { content: msg.content, isToolResult: false };
 
   if (Array.isArray(msg.content)) {
     const parts: string[] = [];
+    let hasToolResult = false;
+    let hasText = false;
     for (const block of msg.content) {
       if (block.type === "text" && typeof block.text === "string") {
         parts.push(block.text);
+        hasText = true;
       } else if (block.type === "tool_result") {
         const resultText = extractToolResultText(block);
         if (resultText) parts.push(resultText);
+        hasToolResult = true;
       }
     }
-    return parts.join("\n");
+    // Mark as toolResult if it only contains tool results (no user text)
+    return { content: parts.join("\n"), isToolResult: hasToolResult && !hasText };
   }
 
-  return "";
+  return { content: "", isToolResult: false };
 }
 
 function extractToolResultText(block: ClaudeContentBlock): string {

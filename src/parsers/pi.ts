@@ -85,9 +85,9 @@ export function parsePi(dateStr: string): Session[] {
         if (sessionTime < startTimestamp || sessionTime > endTimestamp) continue;
 
         const messages: Message[] = [];
-        let totalTokens = 0;
         let tokensInput = 0;
         let tokensOutput = 0;
+        let lastCacheRead = 0;
         let toolCallCount = 0;
 
         for (const event of events) {
@@ -132,10 +132,13 @@ export function parsePi(dateStr: string): Session[] {
           const usage = msg.usage as Record<string, unknown> | undefined;
           const msgInput = (usage?.input as number) ?? 0;
           const msgOutput = (usage?.output as number) ?? 0;
-          totalTokens +=
-            (usage?.totalTokens as number) ?? (msgInput + msgOutput);
+          const msgCacheRead = (usage?.cacheRead as number) ?? 0;
+          // cacheRead is cumulative (total cached context), use last message's value
+          // input is new (non-cached) tokens for this message, sum them all
           tokensInput += msgInput;
           tokensOutput += msgOutput;
+          // Track cumulative cache read from last message
+          lastCacheRead = msgCacheRead;
 
           messages.push({
             role,
@@ -148,9 +151,12 @@ export function parsePi(dateStr: string): Session[] {
                 : null,
             finishReason: null,
             model,
-            tokenCount: ((usage?.totalTokens as number) ?? (msgInput + msgOutput)) || null,
+            tokenCount: (msgInput + msgOutput) || null,
           });
         }
+
+        // Total input = non-cached input + final cached context size
+        const totalInput = tokensInput + lastCacheRead;
 
         sessions.push({
           id: sessionId || path.basename(filePath, ".jsonl"),
@@ -165,8 +171,8 @@ export function parsePi(dateStr: string): Session[] {
           messageCount: messages.length,
           toolCallCount,
           estimatedCostUsd: 0,
-          totalTokens,
-          tokensInput,
+          totalTokens: totalInput + tokensOutput,
+          tokensInput: totalInput,
           tokensOutput,
         });
       } catch {
@@ -177,7 +183,7 @@ export function parsePi(dateStr: string): Session[] {
     sessions.sort((a, b) => {
       const ta = a.startedAt?.getTime() ?? 0;
       const tb = b.startedAt?.getTime() ?? 0;
-      return ta - tb;
+      return tb - ta;
     });
 
     return sessions;
