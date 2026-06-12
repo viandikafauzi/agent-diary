@@ -1,27 +1,34 @@
 import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
+import {
+  hermesStateDbPath,
+  piSessionsDir,
+  claudeProjectsDir,
+  claudeDesktopSessionsDir,
+  opencodeDbPath,
+} from "../paths.js";
 
 export function detectSources(): string[] {
-  const home = os.homedir();
   const sources: string[] = [];
 
-  if (fs.existsSync(path.join(home, ".hermes", "state.db"))) {
+  if (fs.existsSync(hermesStateDbPath())) {
     sources.push("hermes");
   }
+  const piDir = piSessionsDir();
   if (
-    fs.existsSync(path.join(home, ".pi", "agent", "sessions")) &&
-    fs.statSync(path.join(home, ".pi", "agent", "sessions")).isDirectory()
+    fs.existsSync(piDir) &&
+    fs.statSync(piDir).isDirectory()
   ) {
     sources.push("pi");
   }
+  const claudeDir = claudeProjectsDir();
+  const desktopDir = claudeDesktopSessionsDir();
   if (
-    fs.existsSync(path.join(home, ".claude", "projects")) &&
-    fs.statSync(path.join(home, ".claude", "projects")).isDirectory()
+    (fs.existsSync(claudeDir) && fs.statSync(claudeDir).isDirectory()) ||
+    (desktopDir !== null && fs.existsSync(desktopDir))
   ) {
     sources.push("claude");
   }
-  if (fs.existsSync(path.join(home, ".local", "share", "opencode", "opencode.db"))) {
+  if (fs.existsSync(opencodeDbPath())) {
     sources.push("opencode");
   }
 
