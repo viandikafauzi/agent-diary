@@ -1,4 +1,4 @@
-import type { Conversation, ToneResult } from "../types.js";
+import type { Session, ToneResult } from "../types.js";
 import {
   detectLanguage,
   getTonePatterns,
@@ -7,11 +7,11 @@ import {
   hasEmoji,
 } from "../analyzers/lang_utils.js";
 
-export function analyzeTone(conversations: Conversation[]): ToneResult {
+export function analyzeTone(sessions: Session[]): ToneResult {
   const agentMessages: string[] = [];
 
-  for (const conv of conversations) {
-    for (const msg of conv.messages) {
+  for (const sess of sessions) {
+    for (const msg of sess.messages) {
       if (msg.role === "assistant" && msg.content.length > 0) {
         agentMessages.push(msg.content);
       }

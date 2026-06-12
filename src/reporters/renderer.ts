@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { AnalysisResult, Conversation, NotableChat } from '../types.js';
+import type { AnalysisResult, Session, NotableChat } from '../types.js';
 
 interface SerializedMessage {
   role: string;
@@ -12,7 +12,7 @@ interface SerializedMessage {
   ts: string;
 }
 
-interface SerializedConv {
+interface SerializedSession {
   source: string;
   model: string | null;
   started: string;
@@ -66,9 +66,9 @@ function toneScorePillClass(score: number): string {
   return 'ok';
 }
 
-function serializeConversation(conv: Conversation): SerializedConv {
-  const started = conv.startedAt ? conv.startedAt.toISOString() : '';
-  const messages: SerializedMessage[] = conv.messages.map((msg) => {
+function serializeSession(sess: Session): SerializedSession {
+  const started = sess.startedAt ? sess.startedAt.toISOString() : '';
+  const messages: SerializedMessage[] = sess.messages.map((msg) => {
     const toolNames = msg.toolCalls
       .map((tc) => {
         if (typeof tc.name === 'string') return tc.name;
@@ -90,8 +90,8 @@ function serializeConversation(conv: Conversation): SerializedConv {
   });
 
   return {
-    source: conv.source,
-    model: conv.model,
+    source: sess.source,
+    model: sess.model,
     started,
     messages,
   };
@@ -112,13 +112,13 @@ function loadCSS(): string {
 }
 
 function generateHtml(date: string, result: AnalysisResult, css: string): string {
-  const { sentiment, tone, interaction, effectiveness, sourcesData, notable, conversations } = result;
+  const { sentiment, tone, interaction, effectiveness, sourcesData, notable, sessions } = result;
 
   const sources = Object.keys(sourcesData);
-  const totalConversations = conversations.length;
-  const totalMessages = tone.totalAgentMessages + totalConversations; // agent + user roughly
+  const totalSessions = sessions.length;
+  const totalMessages = tone.totalAgentMessages + totalSessions; // agent + user roughly
 
-  if (totalConversations === 0) {
+  if (totalSessions === 0) {
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -142,14 +142,14 @@ function generateHtml(date: string, result: AnalysisResult, css: string): string
   }
 
   const generatedAt = new Date().toISOString();
-  const showFilter = conversations.length > 0 && sources.length > 1;
+  const showFilter = sessions.length > 0 && sources.length > 1;
   const toneMax = Math.max(
     sentiment.polarityDistribution.positive,
     sentiment.polarityDistribution.neutral,
     sentiment.polarityDistribution.negative,
   ) || 1;
 
-  const conversationsJson = buildConversationsJson(conversations);
+  const sessionsJson = buildSessionsJson(sessions);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -184,8 +184,8 @@ ${showFilter ? filterBarHtml(sources) : ''}
   </div>
 
   <div class="card">
-    <div class="label">Conversations</div>
-    <div class="value">${thousands(totalConversations)}</div>
+    <div class="label">Sessions</div>
+    <div class="value">${thousands(totalSessions)}</div>
     <div class="subtext">${thousands(totalMessages)} messages</div>
   </div>
 
@@ -304,7 +304,7 @@ ${sourceTableBodyHtml(sourcesData)}
 ${notableChatsHtml(notable)}
 
 <!-- All Sessions -->
-${allSessionsHtml(conversations, sentiment)}
+${allSessionsHtml(sessions, sentiment)}
 
 <!-- Session Viewer Modal -->
 <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
@@ -318,22 +318,22 @@ ${allSessionsHtml(conversations, sentiment)}
 </div>
 
 <script>
-var CONVERSATIONS = ${conversationsJson};
+var SESSIONS = ${sessionsJson};
 var activeFilter = 'all';
 
 function openSession(id) {
-  var conv = CONVERSATIONS[id];
-  if (!conv) return;
+  var sess = SESSIONS[id];
+  if (!sess) return;
 
   var title = document.getElementById('modalTitle');
-  title.innerHTML = '<span class="source-badge ' + escapeHtml(conv.source) + '">' + escapeHtml(conv.source) + '</span> '
-    + '<span>' + escapeHtml(conv.model || 'unknown') + '</span> '
-    + '<span class="meta">' + escapeHtml(conv.started || '') + ' &middot; ' + conv.messages.length + ' msgs</span>';
+  title.innerHTML = '<span class="source-badge ' + escapeHtml(sess.source) + '">' + escapeHtml(sess.source) + '</span> '
+    + '<span>' + escapeHtml(sess.model || 'unknown') + '</span> '
+    + '<span class="meta">' + escapeHtml(sess.started || '') + ' &middot; ' + sess.messages.length + ' msgs</span>';
 
   var body = document.getElementById('modalBody');
   var html = '';
-  for (var i = 0; i < conv.messages.length; i++) {
-    var msg = conv.messages[i];
+  for (var i = 0; i < sess.messages.length; i++) {
+    var msg = sess.messages[i];
     var roleClass = msg.role === 'toolResult' ? 'tool' : escapeHtml(msg.role);
     html += '<div id="msg-' + i + '" class="transcript-msg ' + roleClass + '">';
     html += '<div class="msg-header">';
@@ -517,7 +517,7 @@ function notableChatItemHtml(s: NotableChat, pillClass: string): string {
       ? `<span class="token-badge in">in: ${thousands(s.tokensInput ?? 0)}</span> <span class="token-badge out">out: ${thousands(s.tokensOutput ?? 0)}</span>`
       : '';
 
-  return `    <div class="session-item" data-source="${escapeAttr(s.source)}" data-conv-id="${escapeAttr(s.convId)}" data-msg-idx="${s.msgIdx}" onclick="openSessionAtMessage('${escapeAttr(s.convId)}', ${s.msgIdx})">
+  return `    <div class="session-item" data-source="${escapeAttr(s.source)}" data-session-id="${escapeAttr(s.sessionId)}" data-msg-idx="${s.msgIdx}" onclick="openSessionAtMessage('${escapeAttr(s.sessionId)}', ${s.msgIdx})">
       <div class="session-header">
         <span class="source-badge ${sourceBadgeClass(s.source)}">${escapeHtml(s.source)}</span>
         <span class="score-pill ${pillClass}">${fmt2(s.compound)}</span>
@@ -531,50 +531,50 @@ function notableChatItemHtml(s: NotableChat, pillClass: string): string {
 }
 
 function allSessionsHtml(
-  conversations: Conversation[],
+  sessions: Session[],
   sentiment: import('../types.js').SentimentResult,
 ): string {
-  const items = conversations.map((conv) => {
-    const convSentiment = sentiment.perConversation.find((pc) => pc.id === conv.id);
-    const toneScore = convSentiment ? convSentiment.avgCompound : 0;
+  const items = sessions.map((sess) => {
+    const sessSentiment = sentiment.perSession.find((pc) => pc.id === sess.id);
+    const toneScore = sessSentiment ? sessSentiment.avgCompound : 0;
     const pillClass = toneScorePillClass(toneScore);
 
     const tokenHtml =
-      conv.tokensInput || conv.tokensOutput
-        ? `<span class="token-badge in">in: ${thousands(conv.tokensInput ?? 0)}</span> <span class="token-badge out">out: ${thousands(conv.tokensOutput ?? 0)}</span>`
-        : `<span class="token-badge total">${thousands(conv.totalTokens)} tokens</span>`;
+      sess.tokensInput || sess.tokensOutput
+        ? `<span class="token-badge in">in: ${thousands(sess.tokensInput ?? 0)}</span> <span class="token-badge out">out: ${thousands(sess.tokensOutput ?? 0)}</span>`
+        : `<span class="token-badge total">${thousands(sess.totalTokens)} tokens</span>`;
 
-    const idShort = conv.id.length > 20 ? conv.id.slice(0, 20) + '...' : conv.id;
+    const idShort = sess.id.length > 20 ? sess.id.slice(0, 20) + '...' : sess.id;
 
-    return `    <div class="session-item" data-source="${escapeAttr(conv.source)}" data-session-id="${escapeAttr(conv.id)}" onclick="openSession('${escapeAttr(conv.id)}')">
+    return `    <div class="session-item" data-source="${escapeAttr(sess.source)}" data-session-id="${escapeAttr(sess.id)}" onclick="openSession('${escapeAttr(sess.id)}')">
       <div class="session-header">
         <div>
-          <span class="source-badge ${sourceBadgeClass(conv.source)}">${escapeHtml(conv.source)}</span>
+          <span class="source-badge ${sourceBadgeClass(sess.source)}">${escapeHtml(sess.source)}</span>
           <span class="session-id">${escapeHtml(idShort)}</span>
         </div>
         <span class="score-pill ${pillClass}">${fmt2(toneScore)}</span>
       </div>
       <div class="session-meta">
-        <span>Model: ${escapeHtml(conv.model ?? 'unknown')}</span>
-        <span>${thousands(conv.messageCount)} msgs</span>
-        <span>${thousands(conv.toolCallCount)} tool calls</span>
+        <span>Model: ${escapeHtml(sess.model ?? 'unknown')}</span>
+        <span>${thousands(sess.messageCount)} msgs</span>
+        <span>${thousands(sess.toolCallCount)} tool calls</span>
         ${tokenHtml}
       </div>
     </div>`;
   });
 
   return `<div class="section">
-  <h2>All Sessions (${thousands(conversations.length)})</h2>
+  <h2>All Sessions (${thousands(sessions.length)})</h2>
   <div class="session-list">
 ${items.join('\n')}
   </div>
 </div>`;
 }
 
-function buildConversationsJson(conversations: Conversation[]): string {
-  const map: Record<string, SerializedConv> = {};
-  for (const conv of conversations) {
-    map[conv.id] = serializeConversation(conv);
+function buildSessionsJson(sessions: Session[]): string {
+  const map: Record<string, SerializedSession> = {};
+  for (const sess of sessions) {
+    map[sess.id] = serializeSession(sess);
   }
   const json = JSON.stringify(map);
   return json.replace(/<\/script>/gi, '\\u003c/script>');

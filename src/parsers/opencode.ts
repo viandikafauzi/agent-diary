@@ -2,9 +2,9 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import type { Conversation, Message } from "../types.js";
+import type { Session, Message } from "../types.js";
 
-export function parseOpencode(dateStr: string): Conversation[] {
+export function parseOpencode(dateStr: string): Session[] {
   try {
     const startTimestamp = Date.parse(dateStr + "T00:00:00Z");
     const endTimestamp = Date.parse(dateStr + "T23:59:59Z");
@@ -21,7 +21,7 @@ export function parseOpencode(dateStr: string): Conversation[] {
 
     const db = new Database(dbPath, { readonly: true });
 
-    const sessions = db
+    const dbSessions = db
       .prepare(
         `SELECT * FROM session WHERE time_created >= ? AND time_created <= ? ORDER BY time_created ASC`,
       )
@@ -35,9 +35,9 @@ export function parseOpencode(dateStr: string): Conversation[] {
       `SELECT * FROM part WHERE message_id = ? ORDER BY rowid ASC`,
     );
 
-    const conversations: Conversation[] = [];
+    const sessions: Session[] = [];
 
-    for (const session of sessions) {
+    for (const session of dbSessions) {
       const messageRows = getMessages.all(session.id) as Array<
         Record<string, unknown>
       >;
@@ -174,7 +174,7 @@ export function parseOpencode(dateStr: string): Conversation[] {
       const tokensReasoning = (session.tokens_reasoning as number) || 0;
       const cost = (session.cost as number) || 0;
 
-      conversations.push({
+      sessions.push({
         id: session.id as string,
         source: "opencode",
         model: sessionModel,
@@ -197,7 +197,7 @@ export function parseOpencode(dateStr: string): Conversation[] {
     }
 
     db.close();
-    return conversations;
+    return sessions;
   } catch {
     return [];
   }

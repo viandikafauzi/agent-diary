@@ -2,9 +2,9 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import type { Conversation, Message } from "../types.js";
+import type { Session, Message } from "../types.js";
 
-export function parseHermes(dateStr: string): Conversation[] {
+export function parseHermes(dateStr: string): Session[] {
   try {
     const startTimestamp = Date.parse(dateStr + "T00:00:00Z") / 1000;
     const endTimestamp = Date.parse(dateStr + "T23:59:59Z") / 1000;
@@ -14,7 +14,7 @@ export function parseHermes(dateStr: string): Conversation[] {
 
     const db = new Database(dbPath, { readonly: true });
 
-    const sessions = db
+    const dbSessions = db
       .prepare(
         `SELECT * FROM sessions WHERE started_at >= ? AND started_at <= ? ORDER BY started_at ASC`,
       )
@@ -24,9 +24,9 @@ export function parseHermes(dateStr: string): Conversation[] {
       `SELECT * FROM messages WHERE session_id = ? AND active = 1 ORDER BY timestamp ASC`,
     );
 
-    const conversations: Conversation[] = [];
+    const sessions: Session[] = [];
 
-    for (const session of sessions) {
+    for (const session of dbSessions) {
       const rows = getMessages.all(session.id) as Array<Record<string, unknown>>;
 
       let toolCallsFromMessages = 0;
@@ -55,7 +55,7 @@ export function parseHermes(dateStr: string): Conversation[] {
         };
       });
 
-      conversations.push({
+      sessions.push({
         id: session.id as string,
         source: "hermes",
         model: session.model as string | null,
@@ -81,7 +81,7 @@ export function parseHermes(dateStr: string): Conversation[] {
     }
 
     db.close();
-    return conversations;
+    return sessions;
   } catch {
     return [];
   }

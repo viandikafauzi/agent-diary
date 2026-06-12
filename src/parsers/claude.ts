@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import type { Conversation, Message } from "../types.js";
+import type { Session, Message } from "../types.js";
 
 interface ClaudeLine {
   type: string;
@@ -37,7 +37,7 @@ interface SessionIndexEntry {
   fullPath: string;
 }
 
-export function parseClaude(dateStr: string): Conversation[] {
+export function parseClaude(dateStr: string): Session[] {
   try {
     const startTimestamp = Date.parse(dateStr + "T00:00:00Z");
     const endTimestamp = Date.parse(dateStr + "T23:59:59Z");
@@ -47,28 +47,28 @@ export function parseClaude(dateStr: string): Conversation[] {
     if (!fs.existsSync(projectsDir)) return [];
 
     const projectDirs = readSubdirs(projectsDir);
-    const conversations: Conversation[] = [];
+    const sessions: Session[] = [];
 
     for (const projDir of projectDirs) {
       const matchingSessions = findMatchingSessions(projDir, startTimestamp, endTimestamp);
 
       for (const sessionEntry of matchingSessions) {
         try {
-          const conv = parseSessionFile(sessionEntry);
-          if (conv) conversations.push(conv);
+          const sess = parseSessionFile(sessionEntry);
+          if (sess) sessions.push(sess);
         } catch {
           // skip unparseable sessions
         }
       }
     }
 
-    conversations.sort((a, b) => {
+    sessions.sort((a, b) => {
       const ta = a.startedAt?.getTime() ?? 0;
       const tb = b.startedAt?.getTime() ?? 0;
       return ta - tb;
     });
 
-    return conversations;
+    return sessions;
   } catch {
     return [];
   }
@@ -164,7 +164,7 @@ function readFirstLine(filePath: string): string | null {
   }
 }
 
-function parseSessionFile(filePath: string): Conversation | null {
+function parseSessionFile(filePath: string): Session | null {
   const content = fs.readFileSync(filePath, "utf-8");
   const lines = content.split("\n").filter((l) => l.trim());
 

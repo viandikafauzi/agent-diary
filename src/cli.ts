@@ -10,7 +10,7 @@ import { analyzeTone } from "./analyzers/tone.js";
 import { analyzeInteraction } from "./analyzers/interaction.js";
 import { renderReport } from "./reporters/renderer.js";
 import type {
-  Conversation,
+  Session,
   AnalysisResult,
   SourceMetrics,
   SentimentResult,
@@ -75,10 +75,10 @@ function computeEffectivenessIndex(
 
 /**
  * Aggregate per-source metrics (session count, message count, tool calls,
- * tokens, average tone) from the flattened conversations and sentiment data.
+ * tokens, average tone) from the flattened sessions and sentiment data.
  */
 function computeSourceMetrics(
-  conversations: Conversation[],
+  sessions: Session[],
   sentimentResult: SentimentResult,
 ): Record<string, SourceMetrics> {
   // Count unique sessions per source
@@ -87,25 +87,25 @@ function computeSourceMetrics(
     { sessions: Set<string>; messages: number; toolCalls: number; tokens: number }
   > = {};
 
-  for (const conv of conversations) {
-    if (!perSource[conv.source]) {
-      perSource[conv.source] = {
+  for (const sess of sessions) {
+    if (!perSource[sess.source]) {
+      perSource[sess.source] = {
         sessions: new Set(),
         messages: 0,
         toolCalls: 0,
         tokens: 0,
       };
     }
-    const entry = perSource[conv.source];
-    entry.sessions.add(conv.id);
-    entry.messages += conv.messageCount;
-    entry.toolCalls += conv.toolCallCount;
-    entry.tokens += conv.totalTokens;
+    const entry = perSource[sess.source];
+    entry.sessions.add(sess.id);
+    entry.messages += sess.messageCount;
+    entry.toolCalls += sess.toolCallCount;
+    entry.tokens += sess.totalTokens;
   }
 
-  // Group per-conversation compounds by source for avg tone
+  // Group per-session compounds by source for avg tone
   const compoundsBySource: Record<string, number[]> = {};
-  for (const pc of sentimentResult.perConversation) {
+  for (const pc of sentimentResult.perSession) {
     if (!compoundsBySource[pc.source]) compoundsBySource[pc.source] = [];
     compoundsBySource[pc.source].push(pc.avgCompound);
   }
@@ -143,7 +143,7 @@ function computeNotableChats(
 
   const best = sorted.slice(0, n).map((msg) => ({
     source: msg.source,
-    convId: msg.convId,
+    sessionId: msg.sessionId,
     msgIdx: msg.msgIdx,
     compound: msg.compound,
     contentPreview: msg.contentPreview,
@@ -156,7 +156,7 @@ function computeNotableChats(
     .reverse()
     .map((msg) => ({
       source: msg.source,
-      convId: msg.convId,
+      sessionId: msg.sessionId,
       msgIdx: msg.msgIdx,
       compound: msg.compound,
       contentPreview: msg.contentPreview,
@@ -224,14 +224,14 @@ export function run(): void {
   console.log(`Sources: ${sources.join(", ")}`);
 
   /* ---- parse each source (one failure should not break the rest) ---- */
-  const parserMap: Record<string, (dateStr: string) => Conversation[]> = {
+  const parserMap: Record<string, (dateStr: string) => Session[]> = {
     hermes: parseHermes,
     pi: parsePi,
     claude: parseClaude,
     opencode: parseOpencode,
   };
 
-  const allConversations: Conversation[] = [];
+  const allSessions: Session[] = [];
 
   for (const source of sources) {
     const parser = parserMap[source];
@@ -240,36 +240,36 @@ export function run(): void {
       continue;
     }
     try {
-      const conversations = parser(date);
-      allConversations.push(...conversations);
-      console.log(`  ✓ ${source}: ${conversations.length} session(s)`);
+      const sessions = parser(date);
+      allSessions.push(...sessions);
+      console.log(`  ✓ ${source}: ${sessions.length} session(s)`);
     } catch (err) {
       console.warn(`  ⚠ Failed to parse "${source}": ${err}`);
     }
   }
 
   /* ---- sort by startedAt ---- */
-  allConversations.sort((a, b) => {
+  allSessions.sort((a, b) => {
     const ta = a.startedAt?.getTime() ?? 0;
     const tb = b.startedAt?.getTime() ?? 0;
     return ta - tb;
   });
 
   /* ---- none found ---- */
-  if (allConversations.length === 0) {
+  if (allSessions.length === 0) {
     console.log(`\nNo sessions found for ${date}.`);
     process.exit(0);
   }
 
   /* ---- run analyzers ---- */
-  console.log(`\nAnalyzing ${allConversations.length} session(s)…`);
-  const sentiment = analyzeSentiment(allConversations);
-  const tone = analyzeTone(allConversations);
-  const interaction = analyzeInteraction(allConversations);
+  console.log(`\nAnalyzing ${allSessions.length} session(s)…`);
+  const sentiment = analyzeSentiment(allSessions);
+  const tone = analyzeTone(allSessions);
+  const interaction = analyzeInteraction(allSessions);
 
   /* ---- derived metrics ---- */
   const effectiveness = computeEffectivenessIndex(sentiment, tone, interaction);
-  const sourcesData = computeSourceMetrics(allConversations, sentiment);
+  const sourcesData = computeSourceMetrics(allSessions, sentiment);
   const notable = computeNotableChats(sentiment, 5);
 
   /* ---- build full result ---- */
@@ -280,7 +280,7 @@ export function run(): void {
     effectiveness,
     sourcesData,
     notable,
-    conversations: allConversations,
+    sessions: allSessions,
   };
 
   /* ---- render report ---- */

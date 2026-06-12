@@ -1,15 +1,15 @@
-import type { Conversation, InteractionResult } from "../types.js";
+import type { Session, InteractionResult } from "../types.js";
 import {
   detectLanguage,
   getInteractionPatterns,
   matchInteractionPattern,
 } from "../analyzers/lang_utils.js";
 
-export function analyzeInteraction(conversations: Conversation[]): InteractionResult {
+export function analyzeInteraction(sessions: Session[]): InteractionResult {
   const allContents: string[] = [];
 
-  for (const conv of conversations) {
-    for (const msg of conv.messages) {
+  for (const sess of sessions) {
+    for (const msg of sess.messages) {
       if (msg.content.length > 0) {
         allContents.push(msg.content);
       }
@@ -19,7 +19,7 @@ export function analyzeInteraction(conversations: Conversation[]): InteractionRe
   const language = detectLanguage(allContents);
   const patterns = getInteractionPatterns(language);
 
-  const totalSessions = conversations.length;
+  const totalSessions = sessions.length;
 
   let totalUserMessages = 0;
   let totalAssistantMessages = 0;
@@ -27,8 +27,8 @@ export function analyzeInteraction(conversations: Conversation[]): InteractionRe
   let totalClarifications = 0;
   let cleanExits = 0;
 
-  for (const conv of conversations) {
-    const messages = conv.messages;
+  for (const sess of sessions) {
+    const messages = sess.messages;
 
     if (messages.length === 0) continue;
 

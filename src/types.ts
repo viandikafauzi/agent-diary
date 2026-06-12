@@ -9,7 +9,7 @@ export interface Message {
   tokenCount: number | null;
 }
 
-export interface Conversation {
+export interface Session {
   id: string;
   source: string;
   model: string | null;
@@ -30,9 +30,9 @@ export interface SentimentResult {
   overallCompound: number;
   dominantTone: "positive" | "negative" | "neutral";
   polarityDistribution: { positive: number; neutral: number; negative: number };
-  perConversation: Array<{ id: string; source: string; avgCompound: number; messageCount: number }>;
+  perSession: Array<{ id: string; source: string; avgCompound: number; messageCount: number }>;
   perMessage: Array<{
-    convId: string;
+    sessionId: string;
     source: string;
     msgIdx: number;
     contentPreview: string;
@@ -91,7 +91,7 @@ export interface EffectivenessIndex {
 
 export interface NotableChat {
   source: string;
-  convId: string;
+  sessionId: string;
   msgIdx: number;
   compound: number;
   contentPreview: string;
@@ -106,5 +106,5 @@ export interface AnalysisResult {
   effectiveness: EffectivenessIndex;
   sourcesData: Record<string, SourceMetrics>;
   notable: { best: NotableChat[]; worst: NotableChat[] };
-  conversations: Conversation[];
+  sessions: Session[];
 }

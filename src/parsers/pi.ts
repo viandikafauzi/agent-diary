@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import type { Conversation, Message } from "../types.js";
+import type { Session, Message } from "../types.js";
 
 function findJsonlFiles(dir: string): string[] {
   const results: string[] = [];
@@ -37,7 +37,7 @@ function parseTimestamp(ts: unknown): Date | null {
   return null;
 }
 
-export function parsePi(dateStr: string): Conversation[] {
+export function parsePi(dateStr: string): Session[] {
   try {
     const startTimestamp = Date.parse(dateStr + "T00:00:00Z");
     const endTimestamp = Date.parse(dateStr + "T23:59:59Z");
@@ -49,7 +49,7 @@ export function parsePi(dateStr: string): Conversation[] {
     const jsonlFiles = findJsonlFiles(sessionsDir).sort();
     if (jsonlFiles.length === 0) return [];
 
-    const conversations: Conversation[] = [];
+    const sessions: Session[] = [];
 
     for (const filePath of jsonlFiles) {
       try {
@@ -152,7 +152,7 @@ export function parsePi(dateStr: string): Conversation[] {
           });
         }
 
-        conversations.push({
+        sessions.push({
           id: sessionId || path.basename(filePath, ".jsonl"),
           source: "pi",
           model,
@@ -175,13 +175,13 @@ export function parsePi(dateStr: string): Conversation[] {
       }
     }
 
-    conversations.sort((a, b) => {
+    sessions.sort((a, b) => {
       const ta = a.startedAt?.getTime() ?? 0;
       const tb = b.startedAt?.getTime() ?? 0;
       return ta - tb;
     });
 
-    return conversations;
+    return sessions;
   } catch {
     return [];
   }

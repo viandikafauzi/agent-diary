@@ -1,34 +1,34 @@
 import sentiment from "wink-sentiment";
-import type { Conversation, SentimentResult } from "../types.js";
+import type { Session, SentimentResult } from "../types.js";
 
-export function analyzeSentiment(conversations: Conversation[]): SentimentResult {
-  const perConversation: SentimentResult["perConversation"] = [];
+export function analyzeSentiment(sessions: Session[]): SentimentResult {
+  const perSession: SentimentResult["perSession"] = [];
   const perMessage: SentimentResult["perMessage"] = [];
   const polarityDistribution = { positive: 0, neutral: 0, negative: 0 };
   let agentMessageCount = 0;
   let totalCompound = 0;
 
-  for (const conv of conversations) {
-    const assistantMsgs = conv.messages.filter(
+  for (const sess of sessions) {
+    const assistantMsgs = sess.messages.filter(
       (m) => m.role === "assistant" && m.content.length > 0,
     );
 
     if (assistantMsgs.length === 0) {
-      perConversation.push({
-        id: conv.id,
-        source: conv.source,
+      perSession.push({
+        id: sess.id,
+        source: sess.source,
         avgCompound: 0,
         messageCount: 0,
       });
       continue;
     }
 
-    let convCompoundSum = 0;
+    let sessCompoundSum = 0;
     const tokensPerMsg =
       assistantMsgs.length > 0
         ? {
-            input: Math.round(conv.tokensInput / assistantMsgs.length),
-            output: Math.round(conv.tokensOutput / assistantMsgs.length),
+            input: Math.round(sess.tokensInput / assistantMsgs.length),
+            output: Math.round(sess.tokensOutput / assistantMsgs.length),
           }
         : { input: undefined as number | undefined, output: undefined as number | undefined };
 
@@ -46,15 +46,15 @@ export function analyzeSentiment(conversations: Conversation[]): SentimentResult
         polarityLabel = "neutral";
       }
 
-      convCompoundSum += normalized;
+      sessCompoundSum += normalized;
       agentMessageCount++;
       totalCompound += normalized;
       polarityDistribution[polarityLabel as keyof typeof polarityDistribution]++;
 
       perMessage.push({
-        convId: conv.id,
-        source: conv.source,
-        msgIdx: conv.messages.indexOf(msg),
+        sessionId: sess.id,
+        source: sess.source,
+        msgIdx: sess.messages.indexOf(msg),
         contentPreview: msg.content.slice(0, 150),
         compound: normalized,
         polarityLabel,
@@ -63,10 +63,10 @@ export function analyzeSentiment(conversations: Conversation[]): SentimentResult
       });
     }
 
-    perConversation.push({
-      id: conv.id,
-      source: conv.source,
-      avgCompound: convCompoundSum / assistantMsgs.length,
+    perSession.push({
+      id: sess.id,
+      source: sess.source,
+      avgCompound: sessCompoundSum / assistantMsgs.length,
       messageCount: assistantMsgs.length,
     });
   }
@@ -87,7 +87,7 @@ export function analyzeSentiment(conversations: Conversation[]): SentimentResult
     overallCompound,
     dominantTone,
     polarityDistribution,
-    perConversation,
+    perSession,
     perMessage,
     totalAgentMessages: agentMessageCount,
   };
