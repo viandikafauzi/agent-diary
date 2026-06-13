@@ -6,6 +6,10 @@ import { claudeProjectsDir, claudeDesktopSessionsDir } from "../paths.js";
 interface ClaudeLine {
   type: string;
   timestamp: string;
+  title?: string;
+  customTitle?: string;
+  cwd?: string;
+  isMeta?: boolean;
   costUSD?: number;
   message?: ClaudeMessage;
 }
@@ -39,8 +43,8 @@ interface SessionIndexEntry {
 
 export function parseClaude(dateStr: string): Session[] {
   try {
-    const startTimestamp = Date.parse(dateStr + "T00:00:00Z");
-    const endTimestamp = Date.parse(dateStr + "T23:59:59Z");
+    const startTimestamp = new Date(dateStr + "T00:00:00").getTime();
+    const endTimestamp = new Date(dateStr + "T23:59:59").getTime();
     if (isNaN(startTimestamp) || isNaN(endTimestamp)) return [];
 
     const sessions: Session[] = [];
@@ -230,6 +234,8 @@ function parseSessionFile(filePath: string): Session | null {
   const lines = content.split("\n").filter((l) => l.trim());
 
   const parsedLines: ClaudeLine[] = [];
+  let sessionTitle: string | null = null;
+  let sessionCwd: string | null = null;
   let firstTimestamp: Date | null = null;
   let firstModel: string | null = null;
   let totalCost = 0;
@@ -246,6 +252,18 @@ function parseSessionFile(filePath: string): Session | null {
     }
 
     parsedLines.push(obj);
+
+    if (obj.type === "session") {
+      sessionTitle = obj.title ?? null;
+    } else if (obj.type === "custom-title" && obj.customTitle) {
+      sessionTitle = obj.customTitle;
+    } else if (obj.type === "ai-title" && obj.title) {
+      sessionTitle = obj.title;
+    }
+
+    if (!sessionCwd && obj.cwd) {
+      sessionCwd = obj.cwd;
+    }
 
     if (!firstTimestamp && obj.timestamp) {
       const d = new Date(obj.timestamp);
@@ -275,6 +293,25 @@ function parseSessionFile(filePath: string): Session | null {
 
   if (messages.length === 0) return null;
 
+  if (!sessionTitle) {
+    const firstUserLine = parsedLines.find(
+      (l) => l.type === "user" && !l.isMeta && l.message?.content,
+    );
+    if (firstUserLine?.message) {
+      const msg = firstUserLine.message;
+      const raw =
+        typeof msg.content === "string"
+          ? msg.content
+          : Array.isArray(msg.content)
+            ? (msg.content.find((b) => b.type === "text")?.text ?? "")
+            : "";
+      sessionTitle = raw.split("\n")[0].slice(0, 80) || null;
+    }
+    if (!sessionTitle && sessionCwd) {
+      sessionTitle = path.basename(sessionCwd) || null;
+    }
+  }
+
   const sessionId = path.basename(filePath, ".jsonl");
   let toolCallCount = 0;
   for (const msg of messages) {
@@ -283,6 +320,7 @@ function parseSessionFile(filePath: string): Session | null {
 
   return {
     id: sessionId,
+    title: sessionTitle,
     source: "claude",
     model: firstModel,
     startedAt: firstTimestamp,

@@ -11,6 +11,7 @@ export interface Message {
 
 export interface Session {
   id: string;
+  title: string | null;
   source: string;
   model: string | null;
   startedAt: Date | null;
@@ -69,10 +70,8 @@ export interface InteractionResult {
   clarificationRatio: number;
   totalCorrections: number;
   correctionRatio: number;
-  avgRedosPerSession: number;
-  cleanExits: number;
-  danglingExits: number;
-  cleanExitRatio: number;
+  correctionScore: number;
+  clarificationScore: number;
 }
 
 export interface SourceMetrics {
@@ -80,6 +79,7 @@ export interface SourceMetrics {
   messages: number;
   toolCalls: number;
   tokens: number;
+  cost: number;
   avgTone: number | null;
 }
 
@@ -88,7 +88,7 @@ export interface EffectivenessIndex {
   label: "effective" | "balanced" | "struggling";
 }
 
-export interface NotableChat {
+export interface NotableConversation {
   source: string;
   sessionId: string;
   msgIdx: number;
@@ -103,7 +103,8 @@ export interface AnalysisResult {
   tone: ToneResult;
   interaction: InteractionResult;
   effectiveness: EffectivenessIndex;
+  perSourceAnalysis: Record<string, { sentiment: SentimentResult; tone: ToneResult; interaction: InteractionResult; effectiveness: EffectivenessIndex }>;
   sourcesData: Record<string, SourceMetrics>;
-  notable: { best: NotableChat[]; worst: NotableChat[] };
+  notable?: { best: NotableConversation[]; worst: NotableConversation[] };
   sessions: Session[];
 }

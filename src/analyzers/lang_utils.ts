@@ -222,12 +222,9 @@ const EN_INTERACTION = {
     "wrong",
     "nope",
     "incorrect",
-    "actually",
     "i meant",
     "what i meant",
     "that\u2019s not",
-    "don\u2019t do",
-    "do not",
     "shouldn\u2019t",
     "should not",
     "try again",
@@ -284,7 +281,6 @@ const ID_INTERACTION = {
     "maksudnya",
     "seharusnya",
     "bukan begitu",
-    "jangan",
     "coba lagi",
     "ulang",
     "ulangi",
@@ -340,6 +336,28 @@ const ID_INTERACTION = {
     "tolong jelaskan",
   ],
 };
+
+export const STRONG_CORRECTION_PATTERNS_EN = [
+  "wrong", "nope", "incorrect",
+  "try again", "redo", "re-do", "not correct", "not working",
+  "doesn't work", "didn't work", "still broken", "not right",
+];
+
+export const WEAK_CORRECTION_PATTERNS_EN = [
+  "i meant", "what i meant", "that's not",
+  "shouldn't", "should not", "not yet", "not what i",
+];
+
+export const STRONG_CORRECTION_PATTERNS_ID = [
+  "salah", "bukan itu", "bukan begitu",
+  "coba lagi", "ulang", "ulangi", "salah semua",
+  "masih salah", "tidak benar", "bukan ini", "salah lagi",
+];
+
+export const WEAK_CORRECTION_PATTERNS_ID = [
+  "bukan", "maksudnya", "seharusnya", "belum",
+  "nggak", "gak", "tidak sesuai", "bukan gitu",
+];
 
 
 const TONE_EMOJI = {
@@ -414,14 +432,76 @@ export function matchTonePattern(
   return regexes.some((re) => new RegExp(re, "i").test(text));
 }
 
+export function scoreInteractionPattern(
+  patterns: InteractionPatterns,
+  category: InteractionCategory,
+  text: string,
+  sentimentScore: number = 0,
+  lang: string = "en",
+): number {
+  const substrings = patterns[category] ?? [];
+  const lower = text.toLowerCase();
+  const matched = substrings.filter((sub) => lower.includes(sub.toLowerCase()));
+
+  // exit_positive: binary
+  if (category === "exit_positive") {
+    return matched.length > 0 ? 1 : 0;
+  }
+
+  // clarification_question: stepped (no modifiers)
+  if (category === "clarification_question") {
+    if (matched.length === 0) return 0;
+    if (matched.length === 1) return 0.4;
+    return 0.6;
+  }
+
+  // correction: multi-signal scoring
+  if (matched.length === 0) return 0;
+
+  // Step 1: pattern density
+  let score: number;
+  if (matched.length === 1) score = 0.3;
+  else if (matched.length === 2) score = 0.5;
+  else score = 0.7;
+
+  // Step 2: strength boost
+  const strongPatterns = lang === "id" ? STRONG_CORRECTION_PATTERNS_ID : STRONG_CORRECTION_PATTERNS_EN;
+  const hasStrong = matched.some((m) =>
+    strongPatterns.some((sp) => m.toLowerCase().includes(sp.toLowerCase()))
+  );
+  if (hasStrong) score = Math.min(1, score + 0.2);
+
+  // Step 3: sentiment modifier (only if score > 0)
+  if (score > 0) {
+    if (sentimentScore < 0) score *= 1.2;
+    else if (sentimentScore > 0.3) score *= 0.8;
+  }
+
+  // Step 4: length normalization
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+  if (score > 0) {
+    if (wordCount <= 5) score += 0.1;
+    else if (wordCount > 100) score -= 0.1;
+  }
+
+  // Step 5: clamp
+  return Math.min(1, Math.max(0, score));
+}
+
 export function matchInteractionPattern(
   patterns: InteractionPatterns,
   category: InteractionCategory,
   text: string,
+): number {
+  return scoreInteractionPattern(patterns, category, text, 0, "en");
+}
+
+export function hasInteractionPattern(
+  patterns: InteractionPatterns,
+  category: InteractionCategory,
+  text: string,
 ): boolean {
-  const substrings = patterns[category] ?? [];
-  const lower = text.toLowerCase();
-  return substrings.some((sub) => lower.includes(sub.toLowerCase()));
+  return scoreInteractionPattern(patterns, category, text) > 0;
 }
 
 export function hasQuestionMark(text: string): boolean {

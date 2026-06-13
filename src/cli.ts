@@ -9,14 +9,16 @@ import { parseOpencode } from "./parsers/opencode.js";
 import { analyzeSentiment } from "./analyzers/sentiment.js";
 import { analyzeTone } from "./analyzers/tone.js";
 import { analyzeInteraction } from "./analyzers/interaction.js";
+import { computeEffectivenessIndex } from "./analyzers/effectiveness.js";
 import { renderReport } from "./reporters/renderer.js";
 import type {
   Session,
   AnalysisResult,
   SourceMetrics,
   SentimentResult,
+  ToneResult,
+  InteractionResult,
   EffectivenessIndex,
-  NotableChat,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -45,36 +47,6 @@ Examples:
 }
 
 /**
- * Combine sentiment + tone + interaction into a single [0-100] effectiveness
- * score and a human-readable label.
- */
-function computeEffectivenessIndex(
-  sentimentResult: { overallCompound: number },
-  toneResult: { confidenceNet: number },
-  interactionResult: { cleanExitRatio: number },
-): EffectivenessIndex {
-  // Map compound [-1, 1] → [0, 40]
-  const sentScore = ((sentimentResult.overallCompound + 1) / 2) * 40;
-  // Map confidenceNet [-1, 1] → [0, 30]
-  const confScore = ((toneResult.confidenceNet + 1) / 2) * 30;
-  // cleanExitRatio [0, 1] → [0, 30]
-  const exitScore = interactionResult.cleanExitRatio * 30;
-
-  const score = Math.min(100, Math.max(0, Math.round(sentScore + confScore + exitScore)));
-
-  let label: EffectivenessIndex["label"];
-  if (score >= 70) {
-    label = "effective";
-  } else if (score >= 40) {
-    label = "balanced";
-  } else {
-    label = "struggling";
-  }
-
-  return { score, label };
-}
-
-/**
  * Aggregate per-source metrics (session count, message count, tool calls,
  * tokens, average tone) from the flattened sessions and sentiment data.
  */
@@ -85,7 +57,7 @@ function computeSourceMetrics(
   // Count unique sessions per source
   const perSource: Record<
     string,
-    { sessions: Set<string>; messages: number; toolCalls: number; tokens: number }
+    { sessions: Set<string>; messages: number; toolCalls: number; tokens: number; cost: number }
   > = {};
 
   for (const sess of sessions) {
@@ -95,6 +67,7 @@ function computeSourceMetrics(
         messages: 0,
         toolCalls: 0,
         tokens: 0,
+        cost: 0,
       };
     }
     const entry = perSource[sess.source];
@@ -102,6 +75,7 @@ function computeSourceMetrics(
     entry.messages += sess.messageCount;
     entry.toolCalls += sess.toolCallCount;
     entry.tokens += sess.totalTokens;
+    entry.cost += sess.estimatedCostUsd;
   }
 
   // Group per-session compounds by source for avg tone
@@ -124,48 +98,12 @@ function computeSourceMetrics(
       messages: data.messages,
       toolCalls: data.toolCalls,
       tokens: data.tokens,
+      cost: data.cost,
       avgTone,
     };
   }
 
   return metrics;
-}
-
-/**
- * Pick the top-N best and worst messages by compound sentiment score.
- */
-function computeNotableChats(
-  sentimentResult: SentimentResult,
-  n: number,
-): { best: NotableChat[]; worst: NotableChat[] } {
-  const sorted = [...sentimentResult.perMessage].sort(
-    (a, b) => b.compound - a.compound,
-  );
-
-  const best = sorted.slice(0, n).map((msg) => ({
-    source: msg.source,
-    sessionId: msg.sessionId,
-    msgIdx: msg.msgIdx,
-    compound: msg.compound,
-    contentPreview: msg.contentPreview,
-    tokensInput: msg.tokensInput,
-    tokensOutput: msg.tokensOutput,
-  }));
-
-  const worst = sorted
-    .slice(-n)
-    .reverse()
-    .map((msg) => ({
-      source: msg.source,
-      sessionId: msg.sessionId,
-      msgIdx: msg.msgIdx,
-      compound: msg.compound,
-      contentPreview: msg.contentPreview,
-      tokensInput: msg.tokensInput,
-      tokensOutput: msg.tokensOutput,
-    }));
-
-  return { best, worst };
 }
 
 // ---------------------------------------------------------------------------
@@ -269,9 +207,31 @@ export function run(): void {
   const interaction = analyzeInteraction(allSessions);
 
   /* ---- derived metrics ---- */
-  const effectiveness = computeEffectivenessIndex(sentiment, tone, interaction);
+  const effectiveness = computeEffectivenessIndex(sentiment, tone);
   const sourcesData = computeSourceMetrics(allSessions, sentiment);
-  const notable = computeNotableChats(sentiment, 5);
+
+  /* ---- per-source analysis ---- */
+  const sessionsBySource: Record<string, Session[]> = {};
+  for (const sess of allSessions) {
+    if (!sessionsBySource[sess.source]) sessionsBySource[sess.source] = [];
+    sessionsBySource[sess.source].push(sess);
+  }
+
+  const perSourceAnalysis: Record<string, { sentiment: SentimentResult; tone: ToneResult; interaction: InteractionResult; effectiveness: EffectivenessIndex }> = {};
+  for (const source of sources) {
+    const sourceSessions = sessionsBySource[source];
+    if (!sourceSessions || sourceSessions.length === 0) continue;
+    const srcSentiment = analyzeSentiment(sourceSessions);
+    const srcTone = analyzeTone(sourceSessions);
+    const srcInteraction = analyzeInteraction(sourceSessions);
+    const srcEffectiveness = computeEffectivenessIndex(srcSentiment, srcTone);
+    perSourceAnalysis[source] = {
+      sentiment: srcSentiment,
+      tone: srcTone,
+      interaction: srcInteraction,
+      effectiveness: srcEffectiveness,
+    };
+  }
 
   /* ---- build full result ---- */
   const result: AnalysisResult = {
@@ -279,8 +239,8 @@ export function run(): void {
     tone,
     interaction,
     effectiveness,
+    perSourceAnalysis,
     sourcesData,
-    notable,
     sessions: allSessions,
   };
 
@@ -303,7 +263,6 @@ export function run(): void {
   console.log(`  Messages:         ${interaction.totalTurns}`);
   console.log(`  Overall Tone:     ${sentiment.dominantTone} (${sentiment.overallCompound.toFixed(3)})`);
   console.log(`  Effectiveness:    ${(effectiveness.score / 100).toFixed(2)} (${effectiveness.label})`);
-  console.log(`  Clean Exit Rate:  ${(interaction.cleanExitRatio * 100).toFixed(0)}%`);
   console.log(`  Report:           ${outputPath}`);
 }
 

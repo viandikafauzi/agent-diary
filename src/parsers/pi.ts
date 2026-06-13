@@ -39,8 +39,8 @@ function parseTimestamp(ts: unknown): Date | null {
 
 export function parsePi(dateStr: string): Session[] {
   try {
-    const startTimestamp = Date.parse(dateStr + "T00:00:00Z");
-    const endTimestamp = Date.parse(dateStr + "T23:59:59Z");
+    const startTimestamp = new Date(dateStr + "T00:00:00").getTime();
+    const endTimestamp = new Date(dateStr + "T23:59:59").getTime();
     if (isNaN(startTimestamp) || isNaN(endTimestamp)) return [];
 
     const sessionsDir = path.join(os.homedir(), ".pi", "agent", "sessions");
@@ -57,6 +57,8 @@ export function parsePi(dateStr: string): Session[] {
         const lines = content.split("\n").filter((line) => line.trim());
 
         let sessionId = "";
+        let sessionTitle: string | null = null;
+        let sessionCwd: string | null = null;
         let sessionTimestamp: Date | null = null;
         let model: string | null = null;
         const events: Record<string, unknown>[] = [];
@@ -68,6 +70,8 @@ export function parsePi(dateStr: string): Session[] {
 
             if (type === "session") {
               sessionId = (obj.id as string) ?? "";
+              sessionTitle = (obj.title as string) ?? null;
+              sessionCwd = (obj.cwd as string) ?? null;
               sessionTimestamp = parseTimestamp(obj.timestamp);
             } else if (type === "model_change") {
               model = (obj.modelId as string) ?? (obj.model as string) ?? model;
@@ -158,8 +162,20 @@ export function parsePi(dateStr: string): Session[] {
         // Total input = non-cached input + final cached context size
         const totalInput = tokensInput + lastCacheRead;
 
+        if (!sessionTitle) {
+          const firstUserMsg = messages.find((m) => m.role === "user");
+          if (firstUserMsg) {
+            sessionTitle =
+              firstUserMsg.content.split("\n")[0].slice(0, 80) || null;
+          }
+          if (!sessionTitle && sessionCwd) {
+            sessionTitle = path.basename(sessionCwd) || null;
+          }
+        }
+
         sessions.push({
           id: sessionId || path.basename(filePath, ".jsonl"),
+          title: sessionTitle,
           source: "pi",
           model,
           startedAt: sessionTimestamp,

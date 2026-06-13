@@ -5,8 +5,8 @@ import { hermesStateDbPath } from "../paths.js";
 
 export function parseHermes(dateStr: string): Session[] {
   try {
-    const startTimestamp = Date.parse(dateStr + "T00:00:00Z") / 1000;
-    const endTimestamp = Date.parse(dateStr + "T23:59:59Z") / 1000;
+    const startTimestamp = new Date(dateStr + "T00:00:00").getTime() / 1000;
+    const endTimestamp = new Date(dateStr + "T23:59:59").getTime() / 1000;
 
     const dbPath = hermesStateDbPath();
     if (!fs.existsSync(dbPath)) return [];
@@ -56,6 +56,7 @@ export function parseHermes(dateStr: string): Session[] {
 
       sessions.push({
         id: session.id as string,
+        title: (session.title as string) ?? null,
         source: "hermes",
         model: session.model as string | null,
         startedAt: new Date((session.started_at as number) * 1000),

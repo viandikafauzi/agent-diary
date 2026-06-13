@@ -5,8 +5,8 @@ import { opencodeDbPath } from "../paths.js";
 
 export function parseOpencode(dateStr: string): Session[] {
   try {
-    const startTimestamp = Date.parse(dateStr + "T00:00:00Z");
-    const endTimestamp = Date.parse(dateStr + "T23:59:59Z");
+    const startTimestamp = new Date(dateStr + "T00:00:00").getTime();
+    const endTimestamp = new Date(dateStr + "T23:59:59").getTime();
     if (isNaN(startTimestamp) || isNaN(endTimestamp)) return [];
 
     const dbPath = opencodeDbPath();
@@ -182,6 +182,7 @@ export function parseOpencode(dateStr: string): Session[] {
 
       sessions.push({
         id: session.id as string,
+        title: (session.title as string) ?? null,
         source: "opencode",
         model: sessionModel,
         startedAt: session.time_created

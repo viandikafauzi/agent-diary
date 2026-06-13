@@ -141,6 +141,19 @@ body {
   margin-bottom: 0.75rem;
 }
 
+.subtitle-positive { color: var(--green); }
+.subtitle-negative { color: var(--red); margin-top: 1.5rem; }
+.metric-warning {
+  color: var(--red);
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  background: rgba(248, 81, 73, 0.1);
+  border-radius: 6px;
+  border: 1px solid rgba(248, 81, 73, 0.2);
+}
+
 /* Bar Chart */
 .bar-chart {
   display: flex;
@@ -232,6 +245,8 @@ body {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 1rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .session-header {
@@ -252,6 +267,12 @@ body {
   color: var(--text);
   margin-bottom: 0.5rem;
   line-height: 1.4;
+  max-height: 2.8em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .session-meta {
@@ -278,6 +299,17 @@ body {
 .score-pill.good { background: #3fb95022; color: var(--green); }
 .score-pill.bad { background: #f8514922; color: var(--red); }
 .score-pill.ok { background: #d2991d22; color: var(--yellow); }
+
+.anomaly-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: #f0883e22;
+  color: var(--orange);
+  border: 1px solid #f0883e44;
+}
 
 /* Progress Bar */
 .progress-ring {
@@ -345,6 +377,7 @@ body {
   body { padding: 1rem; }
   .cards { grid-template-columns: 1fr 1fr; }
   .metric-grid { grid-template-columns: 1fr 1fr; }
+  .bar-row { overflow-x: auto; }
 }
 
 /* Filter Bar */
@@ -376,12 +409,6 @@ body {
   border-color: var(--accent);
   color: var(--text-bright);
   background: #58a6ff11;
-}
-
-/* Clickable session items */
-.session-item {
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .session-item:hover {
@@ -511,7 +538,6 @@ body {
 .transcript-msg.system .role-badge { background: #d2991d22; color: var(--yellow); }
 
 .transcript-msg .msg-body {
-  font-size: 0.85rem;
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
