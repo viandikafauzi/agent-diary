@@ -1,6 +1,6 @@
 {
   "name": "agent-diary",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Sentiment + interaction analysis of AI agent conversation logs. Generates an HTML report summarizing your daily conversations across multiple AI CLI tools.",
   "type": "module",
   "main": "./dist/index.js",
