@@ -1,4 +1,5 @@
-import { exec } from "node:child_process";
+import fs from "node:fs";
+import { exec, execSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import path from "node:path";
 import { detectSources } from "./parsers/detector.js";
@@ -267,6 +268,31 @@ export function run(): void {
 }
 
 /**
+ * Detect if running inside Windows Subsystem for Linux (WSL).
+ */
+function isWsl(): boolean {
+  if (process.platform !== "linux") return false;
+  try {
+    const version = fs.readFileSync("/proc/version", "utf-8").toLowerCase();
+    return version.includes("microsoft") || version.includes("wsl");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if a command exists (is available in PATH).
+ */
+function commandExists(cmd: string): boolean {
+  try {
+    execSync(`which ${cmd}`, { stdio: "ignore", timeout: 2000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Open a file in the user's default browser, cross-platform.
  */
 function openInBrowser(filePath: string): void {
@@ -278,6 +304,15 @@ function openInBrowser(filePath: string): void {
     command = `cmd /c start "" "${resolved}"`;
   } else if (platform === "darwin") {
     command = `open "${resolved}"`;
+  } else if (isWsl()) {
+    // WSL: try wslview first (from wslu package), then PowerShell with file:// URL
+    if (commandExists("wslview")) {
+      command = `wslview "${resolved}"`;
+    } else {
+      // Convert Linux path to file:// URL for WSL UNC path
+      const fileUrl = `file://wsl.localhost/Ubuntu${resolved}`;
+      command = `powershell.exe -Command "Start-Process '${fileUrl}'"`;
+    }
   } else {
     command = `xdg-open "${resolved}"`;
   }

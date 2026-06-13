@@ -93,6 +93,7 @@ export function parsePi(dateStr: string): Session[] {
         let tokensOutput = 0;
         let lastCacheRead = 0;
         let toolCallCount = 0;
+        let sessionCost = 0;
 
         for (const event of events) {
           const msg = event.message as Record<string, unknown> | undefined;
@@ -143,6 +144,12 @@ export function parsePi(dateStr: string): Session[] {
           tokensOutput += msgOutput;
           // Track cumulative cache read from last message
           lastCacheRead = msgCacheRead;
+          
+          // Extract cost from usage.cost.total if available
+          const costObj = usage?.cost as Record<string, unknown> | undefined;
+          if (costObj && typeof costObj.total === 'number') {
+            sessionCost += costObj.total;
+          }
 
           messages.push({
             role,
@@ -186,7 +193,7 @@ export function parsePi(dateStr: string): Session[] {
           messages,
           messageCount: messages.length,
           toolCallCount,
-          estimatedCostUsd: 0,
+          estimatedCostUsd: sessionCost,
           totalTokens: totalInput + tokensOutput,
           tokensInput: totalInput,
           tokensOutput,
