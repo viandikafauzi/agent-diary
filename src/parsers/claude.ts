@@ -66,11 +66,15 @@ interface SessionIndexEntry {
   fullPath: string;
 }
 
-export function parseClaude(dateStr: string): Session[] {
+/**
+ * Parse Claude Code & Claude Desktop sessions within a millisecond-precision time window.
+ *
+ * @param startMs  Start of the window (inclusive, epoch ms)
+ * @param endMs    End of the window (inclusive, epoch ms)
+ */
+export function parseClaude(startMs: number, endMs: number): Session[] {
   try {
-    const startTimestamp = new Date(dateStr + "T00:00:00").getTime();
-    const endTimestamp = new Date(dateStr + "T23:59:59").getTime();
-    if (isNaN(startTimestamp) || isNaN(endTimestamp)) return [];
+    if (isNaN(startMs) || isNaN(endMs)) return [];
 
     const sessions: Session[] = [];
 
@@ -79,7 +83,7 @@ export function parseClaude(dateStr: string): Session[] {
     if (fs.existsSync(projectsDir)) {
       const projectDirs = readSubdirs(projectsDir);
       for (const projDir of projectDirs) {
-        parseAllInDir(projDir, startTimestamp, endTimestamp, sessions);
+        parseAllInDir(projDir, startMs, endMs, sessions);
       }
     }
 
@@ -88,7 +92,7 @@ export function parseClaude(dateStr: string): Session[] {
     if (desktopDir && fs.existsSync(desktopDir)) {
       const sessionDirs = findDesktopSessionDirs(desktopDir);
       for (const sessionPath of sessionDirs) {
-        parseAllInDir(sessionPath, startTimestamp, endTimestamp, sessions);
+        parseAllInDir(sessionPath, startMs, endMs, sessions);
       }
     }
 

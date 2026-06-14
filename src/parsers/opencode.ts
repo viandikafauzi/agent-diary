@@ -3,11 +3,15 @@ import fs from "node:fs";
 import type { Session, Message } from "../types.js";
 import { opencodeDbPath } from "../paths.js";
 
-export function parseOpencode(dateStr: string): Session[] {
+/**
+ * Parse OpenCode sessions within a millisecond-precision time window.
+ *
+ * @param startMs  Start of the window (inclusive, epoch ms)
+ * @param endMs    End of the window (inclusive, epoch ms)
+ */
+export function parseOpencode(startMs: number, endMs: number): Session[] {
   try {
-    const startTimestamp = new Date(dateStr + "T00:00:00").getTime();
-    const endTimestamp = new Date(dateStr + "T23:59:59").getTime();
-    if (isNaN(startTimestamp) || isNaN(endTimestamp)) return [];
+    if (isNaN(startMs) || isNaN(endMs)) return [];
 
     const dbPath = opencodeDbPath();
     if (!fs.existsSync(dbPath)) return [];
@@ -18,7 +22,7 @@ export function parseOpencode(dateStr: string): Session[] {
       .prepare(
         `SELECT * FROM session WHERE time_created >= ? AND time_created <= ? ORDER BY time_created DESC`,
       )
-      .all(startTimestamp, endTimestamp) as Array<Record<string, unknown>>;
+      .all(startMs, endMs) as Array<Record<string, unknown>>;
 
     const getMessages = db.prepare(
       `SELECT * FROM message WHERE session_id = ? ORDER BY time_created ASC`,

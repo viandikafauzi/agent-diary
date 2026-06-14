@@ -37,3 +37,6 @@ The AI model identifier for a session (e.g., "deepseek-v4-pro"). Stored as metad
 
 ### Tokens
 Input and output token counts per session, sourced from each CLI's storage. All three fields are part of the domain model: `tokensInput`, `tokensOutput`, `totalTokens` (derived = input + output). `tokensReasoning` exists for sources that report it (Hermes).
+
+### DateRange
+A time window for session filtering, defined by `startMs` and `endMs` (epoch milliseconds, inclusive on both sides). Produced by `resolveDateRange()` in `date-utils.ts` from CLI flags (`--date` and `--range`). All timestamps are computed in **local time** to match parser behavior. Carries a human-readable `label` (e.g. "Jun 5–11, 2026" or "June 2026") and the raw `rangeArg` for filename generation. Single-day mode sets `rangeArg` to `null`.

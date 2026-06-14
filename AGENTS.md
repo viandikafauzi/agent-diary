@@ -12,7 +12,8 @@ Agent Diary is an npm CLI tool that analyzes AI agent conversation logs and gene
 src/
 ├── index.ts              # Entry point (#!/usr/bin/env node)
 ├── cli.ts                # CLI arg parsing, pipeline orchestration
-├── types.ts              # All TypeScript interfaces (Session, Message, AnalysisResult, etc.)
+├── date-utils.ts         # Date-range resolution (--range / --date → DateRange)
+├── types.ts              # All TypeScript interfaces (Session, Message, AnalysisResult, DateRange, etc.)
 ├── parsers/              # One parser per source (1:1 mapping — hard rule)
 │   ├── detector.ts       # Auto-detects installed AI CLIs
 │   ├── hermes.ts         # SQLite reader (~/.hermes/state.db)
@@ -50,6 +51,10 @@ src/
 npm run build          # tsc → dist/
 node dist/index.js     # Run directly
 node dist/index.js --date 2026-06-11 --sources hermes
+node dist/index.js --range week               # last 7 days
+node dist/index.js --date 2026-06-11 --range week  # 7 days ending June 11
+node dist/index.js --range June               # calendar month (current year)
+node dist/index.js --range 2026-05            # specific calendar month
 ```
 
 ### Data Flow
@@ -58,13 +63,14 @@ detector → parsers → sessions → analyzers → AnalysisResult → renderer 
 ```
 
 1. `detector.ts` checks which CLIs have data files
-2. Each parser reads its source and returns `Session[]`
-3. Sentiment, tone, and interaction analyzers process all sessions
-4. `renderer.ts` serializes sessions to JSON, injects into HTML template
-5. Output: self-contained HTML file (no external CSS/JS/fonts)
+2. `cli.ts` calls `resolveDateRange()` to convert CLI flags into a `DateRange` (startMs, endMs)
+3. Each parser receives `(startMs, endMs)` and returns `Session[]` within that window
+4. Sentiment, tone, and interaction analyzers process all sessions
+5. `renderer.ts` serializes sessions to JSON, injects into HTML template
+6. Output: self-contained HTML file (no external CSS/JS/fonts)
 
 ### Adding a New Source
-1. Create `src/parsers/newsource.ts` — implement `parseNewSource(dateStr: string): Session[]`
+1. Create `src/parsers/newsource.ts` — implement `parseNewSource(startMs: number, endMs: number): Session[]`
 2. Add detection logic in `src/parsers/detector.ts`
 3. Register in `src/cli.ts` parser map
 4. Follow the 1:1 rule: one source = one parser
@@ -81,4 +87,4 @@ detector → parsers → sessions → analyzers → AnalysisResult → renderer 
 - **Token serialization**: The `SerializedSession` interface in renderer.ts must include `tokensInput`, `tokensOutput`, `totalTokens` — otherwise HTML gets undefined.
 - **Empty sessions**: A session with 0 messages is still a session. Don't filter it out.
 - **Date validation**: Regex `/^\d{4}-\d{2}-\d{2}$/` is not enough — also validate month/day ranges semantically.
-- **Effectiveness Index**: Raw score range is [-0.7, 1.0], NOT [0, 100]. Never display as percentage.
+- **Effectiveness Index**: Raw score range is [0, 100] (from `computeEffectivenessIndex`). The CLI displays it divided by 100 → [0.00, 1.00] as a decimal. Never display as percentage.

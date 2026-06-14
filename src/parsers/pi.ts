@@ -37,11 +37,15 @@ function parseTimestamp(ts: unknown): Date | null {
   return null;
 }
 
-export function parsePi(dateStr: string): Session[] {
+/**
+ * Parse Pi sessions within a millisecond-precision time window.
+ *
+ * @param startMs  Start of the window (inclusive, epoch ms)
+ * @param endMs    End of the window (inclusive, epoch ms)
+ */
+export function parsePi(startMs: number, endMs: number): Session[] {
   try {
-    const startTimestamp = new Date(dateStr + "T00:00:00").getTime();
-    const endTimestamp = new Date(dateStr + "T23:59:59").getTime();
-    if (isNaN(startTimestamp) || isNaN(endTimestamp)) return [];
+    if (isNaN(startMs) || isNaN(endMs)) return [];
 
     const sessionsDir = path.join(os.homedir(), ".pi", "agent", "sessions");
     if (!fs.existsSync(sessionsDir)) return [];
@@ -86,7 +90,7 @@ export function parsePi(dateStr: string): Session[] {
         if (!sessionTimestamp || events.length === 0) continue;
 
         const sessionTime = sessionTimestamp.getTime();
-        if (sessionTime < startTimestamp || sessionTime > endTimestamp) continue;
+        if (sessionTime < startMs || sessionTime > endMs) continue;
 
         const messages: Message[] = [];
         let tokensInput = 0;
