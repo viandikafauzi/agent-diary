@@ -87,6 +87,8 @@ agent-diary/
 │   ├── cli.ts                 # CLI parsing + pipeline orchestration
 │   ├── date-utils.ts          # Date-range resolution (--range, --date)
 │   ├── types.ts               # All interfaces (Session, Message, AnalysisResult, DateRange)
+│   ├── utils/                 # Shared utilities
+│   │   └── pricing.ts         # Model pricing tables & cost estimation
 │   ├── parsers/               # One parser per source (1:1 mapping)
 │   │   ├── detector.ts        # Auto-detect installed CLIs
 │   │   ├── hermes.ts          # SQLite reader (accepts startMs, endMs)
@@ -104,6 +106,7 @@ agent-diary/
 │   └── report.html            # HTML template with dark theme CSS
 ├── CONTEXT.md                 # Domain glossary and rules
 ├── AGENTS.md                  # Guide for AI coding agents
+├── PRICING.md                 # Pricing documentation & cost estimation details
 ├── package.json
 └── tsconfig.json
 ```
@@ -123,6 +126,10 @@ node dist/index.js --date 2026-06-11
 # Watch mode
 npm run dev
 ```
+
+## Cost Estimation
+
+Cost estimation supports **Claude** (via Anthropic pricing table) and **OpenCode Go** (per-token rates for Go subscription models). Every parser prefers native cost data from its own CLI, then falls back to the pricing table based on the session's model name and token counts. See [PRICING.md](PRICING.md) for details.
 
 ## Architecture Decisions
 

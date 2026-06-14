@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import type { Session, Message } from "../types.js";
 import { opencodeDbPath } from "../paths.js";
+import { estimateSessionCost } from "../utils/pricing.js";
 
 /**
  * Parse OpenCode sessions within a millisecond-precision time window.
@@ -182,7 +183,18 @@ export function parseOpencode(startMs: number, endMs: number): Session[] {
       const tokensInput = (session.tokens_input as number) || 0;
       const tokensOutput = (session.tokens_output as number) || 0;
       const tokensReasoning = (session.tokens_reasoning as number) || 0;
+      const tokensCacheRead = (session.tokens_cache_read as number) || 0;
+      const tokensCacheWrite = (session.tokens_cache_write as number) || 0;
       const cost = (session.cost as number) || 0;
+
+      const estimatedCostUsd = estimateSessionCost({
+        nativeCostUsd: cost > 0 ? cost : null,
+        model: sessionModel,
+        inputTokens: tokensInput,
+        outputTokens: tokensOutput,
+        cachedReadTokens: tokensCacheRead,
+        cachedWriteTokens: tokensCacheWrite,
+      });
 
       sessions.push({
         id: session.id as string,
@@ -198,11 +210,13 @@ export function parseOpencode(startMs: number, endMs: number): Session[] {
         messages,
         messageCount: messages.length,
         toolCallCount,
-        estimatedCostUsd: cost,
+        estimatedCostUsd,
         totalTokens: tokensInput + tokensOutput + tokensReasoning,
         tokensInput,
         tokensOutput,
         tokensReasoning: tokensReasoning || undefined,
+        tokensCachedRead: tokensCacheRead || undefined,
+        tokensCachedWrite: tokensCacheWrite || undefined,
       });
     }
 

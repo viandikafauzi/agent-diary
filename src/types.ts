@@ -24,6 +24,8 @@ export interface Session {
   tokensInput: number;
   tokensOutput: number;
   tokensReasoning?: number;
+  tokensCachedRead?: number;
+  tokensCachedWrite?: number;
 }
 
 export interface SentimentResult {

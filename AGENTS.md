@@ -14,6 +14,8 @@ src/
 ├── cli.ts                # CLI arg parsing, pipeline orchestration
 ├── date-utils.ts         # Date-range resolution (--range / --date → DateRange)
 ├── types.ts              # All TypeScript interfaces (Session, Message, AnalysisResult, DateRange, etc.)
+├── utils/                # Shared utilities
+│   └── pricing.ts        # Model pricing tables & cost estimation (single source of truth)
 ├── parsers/              # One parser per source (1:1 mapping — hard rule)
 │   ├── detector.ts       # Auto-detects installed AI CLIs
 │   ├── hermes.ts         # SQLite reader (~/.hermes/state.db)
@@ -30,6 +32,12 @@ src/
 └── types/
     └── wink-sentiment.d.ts  # Type definitions for wink-sentiment
 ```
+
+### Pricing Module
+
+All cost estimation logic lives in `src/utils/pricing.ts`. This is the **single source of truth** for model pricing data. When providers change their rates, update only this file.
+
+Supported providers: Claude and OpenCode Go. See [PRICING.md](PRICING.md) for full documentation.
 
 ## Key Conventions
 
@@ -88,3 +96,4 @@ detector → parsers → sessions → analyzers → AnalysisResult → renderer 
 - **Empty sessions**: A session with 0 messages is still a session. Don't filter it out.
 - **Date validation**: Regex `/^\d{4}-\d{2}-\d{2}$/` is not enough — also validate month/day ranges semantically.
 - **Effectiveness Index**: Raw score range is [0, 100] (from `computeEffectivenessIndex`). The CLI displays it divided by 100 → [0.00, 1.00] as a decimal. Never display as percentage.
+- **Cost estimation**: All pricing data lives in `src/utils/pricing.ts`. Supported providers: Claude and OpenCode Go. OpenCode and Pi read native cost data from their storage when available; every parser falls back to `estimateSessionCost()` when native cost is missing. Don't add pricing logic to individual parsers.

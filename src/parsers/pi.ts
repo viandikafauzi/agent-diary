@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import type { Session, Message } from "../types.js";
+import { estimateSessionCost } from "../utils/pricing.js";
 
 function findJsonlFiles(dir: string): string[] {
   const results: string[] = [];
@@ -173,6 +174,14 @@ export function parsePi(startMs: number, endMs: number): Session[] {
         // Total input = non-cached input + final cached context size
         const totalInput = tokensInput + lastCacheRead;
 
+        const estimatedCostUsd = estimateSessionCost({
+          nativeCostUsd: sessionCost > 0 ? sessionCost : null,
+          model,
+          inputTokens: tokensInput,
+          outputTokens: tokensOutput,
+          cachedReadTokens: lastCacheRead,
+        });
+
         if (!sessionTitle) {
           const firstUserMsg = messages.find((m) => m.role === "user");
           if (firstUserMsg) {
@@ -197,10 +206,11 @@ export function parsePi(startMs: number, endMs: number): Session[] {
           messages,
           messageCount: messages.length,
           toolCallCount,
-          estimatedCostUsd: sessionCost,
+          estimatedCostUsd,
           totalTokens: totalInput + tokensOutput,
           tokensInput: totalInput,
           tokensOutput,
+          tokensCachedRead: lastCacheRead,
         });
       } catch {
         // skip files that fail to parse

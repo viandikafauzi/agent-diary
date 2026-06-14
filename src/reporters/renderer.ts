@@ -22,6 +22,8 @@ interface SerializedSession {
   tokensInput: number;
   tokensOutput: number;
   totalTokens: number;
+  tokensCachedRead?: number;
+  tokensCachedWrite?: number;
   estimatedCostUsd: number;
   duration: string;
 }
@@ -227,6 +229,8 @@ function serializeSession(sess: Session): SerializedSession {
     tokensInput: sess.tokensInput,
     tokensOutput: sess.tokensOutput,
     totalTokens: sess.totalTokens,
+    tokensCachedRead: sess.tokensCachedRead,
+    tokensCachedWrite: sess.tokensCachedWrite,
     estimatedCostUsd: sess.estimatedCostUsd,
     duration: formatDurationShort(durationMs),
   };
@@ -754,14 +758,6 @@ ${showFilter ? filterBarHtml(sources) : ''}
       <div class="metric-value" data-metric="clarification-rate">${pct(interaction.clarificationRatio)}%</div>
       <div class="metric-detail">${thousands(interaction.totalClarifications)} clarifications / ${thousands(interaction.totalTurns)} turns</div>
     </div>
-  </div>
-</div>
-
-<!-- Tool Usage -->
-<div class="section">
-  <h2>Tool Usage</h2>
-  <div class="no-data" style="padding:1.5rem">
-    <p>Detailed tool usage analytics coming soon.</p>
   </div>
 </div>
 
