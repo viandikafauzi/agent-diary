@@ -12,7 +12,9 @@ import { analyzeTone } from "./analyzers/tone.js";
 import { analyzeInteraction } from "./analyzers/interaction.js";
 import { computeEffectivenessIndex } from "./analyzers/effectiveness.js";
 import { renderReport } from "./reporters/renderer.js";
+import { resolveDateRange } from "./date-utils.js";
 import type {
+  DateRange,
   Session,
   AnalysisResult,
   SourceMetrics,
@@ -26,23 +28,29 @@ import type {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function printUsage(): void {
   console.log(`
 Usage: npx agent-diary [options]
 
 Options:
-  -d, --date <YYYY-MM-DD>    Target date (default: today)
+  -d, --date <YYYY-MM-DD>    Anchor date (default: today). Used with --range.
   -s, --sources <list>       Comma-separated sources: hermes,pi,claude,opencode
+  -r, --range <value>        Date range mode. One of:
+                               week          — 7 rolling days
+                               month         — 30 rolling days
+                               year          — 365 rolling days
+                               <month-name>  — calendar month (e.g. June)
+                               YYYY-MM       — specific calendar month
+                               YYYY          — specific calendar year
   -o, --output <path>        Custom output HTML path
   -h, --help                 Show this help
 
 Examples:
   npx agent-diary
   npx agent-diary --date 2026-06-12
+  npx agent-diary --date 2026-06-12 --range week
+  npx agent-diary --range June
+  npx agent-diary --range 2026-05
   npx agent-diary --sources hermes,claude --output report.html
 `);
 }
@@ -115,6 +123,7 @@ export function run(): void {
   const { values } = parseArgs({
     options: {
       date: { type: "string", short: "d" },
+      range: { type: "string", short: "r" },
       sources: { type: "string", short: "s" },
       output: { type: "string", short: "o" },
       help: { type: "boolean", short: "h" },
@@ -128,19 +137,31 @@ export function run(): void {
     process.exit(0);
   }
 
-  /* ---- date ---- */
-  const date = (values.date ?? today()) as string;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    console.error(`Error: invalid date format "${date}". Expected YYYY-MM-DD.`);
-    process.exit(1);
+  /* ---- date validation (only when --date is given) ---- */
+  const rawDate = (values.date ?? undefined) as string | undefined;
+  if (rawDate !== undefined) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      console.error(`Error: invalid date format "${rawDate}". Expected YYYY-MM-DD.`);
+      process.exit(1);
+    }
+    // Semantic date validation
+    const parsed = new Date(rawDate + "T00:00:00Z");
+    const utcMonth = parsed.getUTCMonth() + 1;
+    const utcDay = parsed.getUTCDate();
+    const [y, m, d] = rawDate.split("-").map(Number);
+    if (utcMonth !== m || utcDay !== d) {
+      console.error(`Error: invalid date "${rawDate}". Month must be 01-12, day must be valid for the month.`);
+      process.exit(1);
+    }
   }
-  // Semantic date validation
-  const parsed = new Date(date + "T00:00:00Z");
-  const utcMonth = parsed.getUTCMonth() + 1;
-  const utcDay = parsed.getUTCDate();
-  const [y, m, d] = date.split("-").map(Number);
-  if (utcMonth !== m || utcDay !== d) {
-    console.error(`Error: invalid date "${date}". Month must be 01-12, day must be valid for the month.`);
+
+  /* ---- resolve date range ---- */
+  const rangeArg = (values.range ?? undefined) as string | undefined;
+  let dateRange: DateRange;
+  try {
+    dateRange = resolveDateRange(rawDate, rangeArg);
+  } catch (err) {
+    console.error(`Error: ${(err as Error).message}`);
     process.exit(1);
   }
 
@@ -160,11 +181,11 @@ export function run(): void {
     process.exit(1);
   }
 
-  console.log(`Agent Diary — ${date}\n`);
+  console.log(`Agent Diary — ${dateRange.label}\n`);
   console.log(`Sources: ${sources.join(", ")}`);
 
   /* ---- parse each source (one failure should not break the rest) ---- */
-  const parserMap: Record<string, (dateStr: string) => Session[]> = {
+  const parserMap: Record<string, (startMs: number, endMs: number) => Session[]> = {
     hermes: parseHermes,
     pi: parsePi,
     claude: parseClaude,
@@ -180,7 +201,7 @@ export function run(): void {
       continue;
     }
     try {
-      const sessions = parser(date);
+      const sessions = parser(dateRange.startMs, dateRange.endMs);
       allSessions.push(...sessions);
       console.log(`  ✓ ${source}: ${sessions.length} session(s)`);
     } catch (err) {
@@ -197,7 +218,7 @@ export function run(): void {
 
   /* ---- none found ---- */
   if (allSessions.length === 0) {
-    console.log(`\nNo sessions found for ${date}.`);
+    console.log(`\nNo sessions found for ${dateRange.label}.`);
     process.exit(0);
   }
 
@@ -248,9 +269,11 @@ export function run(): void {
   /* ---- render report ---- */
   const outputPath = values.output
     ? (values.output as string)
-    : `diary-${date}.html`;
+    : dateRange.rangeArg
+      ? `diary-range-${dateRange.rangeArg}.html`
+      : `diary-${rawDate ?? new Date().toISOString().slice(0, 10)}.html`;
 
-  renderReport(date, result, outputPath);
+  renderReport(dateRange.label, result, outputPath);
   console.log(`\n✔ Report written to ${outputPath}`);
 
   /* ---- open in browser ---- */
@@ -258,7 +281,7 @@ export function run(): void {
 
   /* ---- console summary ---- */
   const sourceNames = Object.keys(sourcesData).join(", ");
-  console.log(`\n── Summary for ${date} ──`);
+  console.log(`\n── Summary for ${dateRange.label} ──`);
   console.log(`  Sources:          ${sourceNames}`);
   console.log(`  Sessions:         ${interaction.totalSessions}`);
   console.log(`  Messages:         ${interaction.totalTurns}`);

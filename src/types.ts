@@ -24,6 +24,8 @@ export interface Session {
   tokensInput: number;
   tokensOutput: number;
   tokensReasoning?: number;
+  tokensCachedRead?: number;
+  tokensCachedWrite?: number;
 }
 
 export interface SentimentResult {
@@ -87,6 +89,23 @@ export interface EffectivenessIndex {
   score: number;
   label: "effective" | "balanced" | "struggling";
 }
+
+// ---------------------------------------------------------------------------
+// Date range types
+// ---------------------------------------------------------------------------
+
+export interface DateRange {
+  /** Unix epoch ms for the start of the range (inclusive) */
+  startMs: number;
+  /** Unix epoch ms for the end of the range (inclusive) */
+  endMs: number;
+  /** Human-readable label for the report header (e.g. "Jun 5–11, 2026") */
+  label: string;
+  /** The raw --range argument, or null for single-day mode */
+  rangeArg: string | null;
+}
+
+export type RangeMode = 'week' | 'month' | 'year';
 
 export interface NotableConversation {
   source: string;

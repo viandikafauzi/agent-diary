@@ -2,11 +2,19 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import type { Session, Message } from "../types.js";
 import { hermesStateDbPath } from "../paths.js";
+import { estimateSessionCost } from "../utils/pricing.js";
 
-export function parseHermes(dateStr: string): Session[] {
+/**
+ * Parse Hermes sessions within a millisecond-precision time window.
+ *
+ * @param startMs  Start of the window (inclusive, epoch ms)
+ * @param endMs    End of the window (inclusive, epoch ms)
+ */
+export function parseHermes(startMs: number, endMs: number): Session[] {
   try {
-    const startTimestamp = new Date(dateStr + "T00:00:00").getTime() / 1000;
-    const endTimestamp = new Date(dateStr + "T23:59:59").getTime() / 1000;
+    // Hermes stores timestamps in seconds
+    const startTimestamp = Math.floor(startMs / 1000);
+    const endTimestamp = Math.ceil(endMs / 1000);
 
     const dbPath = hermesStateDbPath();
     if (!fs.existsSync(dbPath)) return [];
@@ -69,13 +77,22 @@ export function parseHermes(dateStr: string): Session[] {
           (session.tool_call_count as number) || 0,
           toolCallsFromMessages,
         ),
-        estimatedCostUsd: (session.estimated_cost_usd as number) || 0,
+        estimatedCostUsd: estimateSessionCost({
+          nativeCostUsd: (session.estimated_cost_usd as number) || null,
+          model: session.model as string | null,
+          inputTokens: (session.input_tokens as number) || 0,
+          outputTokens: (session.output_tokens as number) || 0,
+          cachedReadTokens: (session.cache_read_tokens as number) || 0,
+          cachedWriteTokens: (session.cache_write_tokens as number) || 0,
+        }),
         totalTokens:
           ((session.input_tokens as number) || 0) +
           ((session.output_tokens as number) || 0),
         tokensInput: (session.input_tokens as number) || 0,
         tokensOutput: (session.output_tokens as number) || 0,
         tokensReasoning: (session.reasoning_tokens as number) || 0,
+        tokensCachedRead: (session.cache_read_tokens as number) || 0,
+        tokensCachedWrite: (session.cache_write_tokens as number) || 0,
       });
     }
 

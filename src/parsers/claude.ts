@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Session, Message } from "../types.js";
 import { claudeProjectsDir, claudeDesktopSessionsDir } from "../paths.js";
+import { estimateSessionCost } from "../utils/pricing.js";
 
 interface ClaudeLine {
   type: string;
@@ -35,42 +36,21 @@ interface ClaudeIteration {
   output_tokens: number;
 }
 
-// Approximate Claude model pricing per 1M tokens (USD)
-// Source: https://docs.anthropic.com/en/docs/about-claude/pricing
-const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  'claude-opus-4': { input: 15, output: 75 },
-  'claude-sonnet-4': { input: 3, output: 15 },
-  'claude-3-5-sonnet': { input: 3, output: 15 },
-  'claude-3-5-haiku': { input: 0.8, output: 4 },
-  'claude-3-opus': { input: 15, output: 75 },
-  'claude-3-sonnet': { input: 3, output: 15 },
-  'claude-3-haiku': { input: 0.25, output: 1.25 },
-};
-
-function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
-  // Find matching model pricing
-  let pricing = MODEL_PRICING['claude-3-5-sonnet']; // default fallback
-  for (const [key, value] of Object.entries(MODEL_PRICING)) {
-    if (model.includes(key)) {
-      pricing = value;
-      break;
-    }
-  }
-  // Calculate cost: price per token = price per 1M / 1_000_000
-  return (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000;
-}
-
 interface SessionIndexEntry {
   sessionId: string;
   timestamp: string;
   fullPath: string;
 }
 
-export function parseClaude(dateStr: string): Session[] {
+/**
+ * Parse Claude Code & Claude Desktop sessions within a millisecond-precision time window.
+ *
+ * @param startMs  Start of the window (inclusive, epoch ms)
+ * @param endMs    End of the window (inclusive, epoch ms)
+ */
+export function parseClaude(startMs: number, endMs: number): Session[] {
   try {
-    const startTimestamp = new Date(dateStr + "T00:00:00").getTime();
-    const endTimestamp = new Date(dateStr + "T23:59:59").getTime();
-    if (isNaN(startTimestamp) || isNaN(endTimestamp)) return [];
+    if (isNaN(startMs) || isNaN(endMs)) return [];
 
     const sessions: Session[] = [];
 
@@ -79,7 +59,7 @@ export function parseClaude(dateStr: string): Session[] {
     if (fs.existsSync(projectsDir)) {
       const projectDirs = readSubdirs(projectsDir);
       for (const projDir of projectDirs) {
-        parseAllInDir(projDir, startTimestamp, endTimestamp, sessions);
+        parseAllInDir(projDir, startMs, endMs, sessions);
       }
     }
 
@@ -88,7 +68,7 @@ export function parseClaude(dateStr: string): Session[] {
     if (desktopDir && fs.existsSync(desktopDir)) {
       const sessionDirs = findDesktopSessionDirs(desktopDir);
       for (const sessionPath of sessionDirs) {
-        parseAllInDir(sessionPath, startTimestamp, endTimestamp, sessions);
+        parseAllInDir(sessionPath, startMs, endMs, sessions);
       }
     }
 
@@ -343,8 +323,12 @@ function parseSessionFile(filePath: string): Session | null {
     toolCallCount += msg.toolCalls.length;
   }
 
-  // If no explicit cost data, estimate based on token counts
-  const finalCost = totalCost > 0 ? totalCost : estimateCost(firstModel ?? '', totalInput, totalOutput);
+  const estimatedCostUsd = estimateSessionCost({
+    nativeCostUsd: totalCost > 0 ? totalCost : null,
+    model: firstModel,
+    inputTokens: totalInput,
+    outputTokens: totalOutput,
+  });
 
   return {
     id: sessionId,
@@ -356,7 +340,7 @@ function parseSessionFile(filePath: string): Session | null {
     messages,
     messageCount: messages.length,
     toolCallCount,
-    estimatedCostUsd: finalCost,
+    estimatedCostUsd,
     totalTokens: totalInput + totalOutput,
     tokensInput: totalInput,
     tokensOutput: totalOutput,

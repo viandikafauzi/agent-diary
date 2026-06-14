@@ -22,6 +22,8 @@ interface SerializedSession {
   tokensInput: number;
   tokensOutput: number;
   totalTokens: number;
+  tokensCachedRead?: number;
+  tokensCachedWrite?: number;
   estimatedCostUsd: number;
   duration: string;
 }
@@ -227,6 +229,8 @@ function serializeSession(sess: Session): SerializedSession {
     tokensInput: sess.tokensInput,
     tokensOutput: sess.tokensOutput,
     totalTokens: sess.totalTokens,
+    tokensCachedRead: sess.tokensCachedRead,
+    tokensCachedWrite: sess.tokensCachedWrite,
     estimatedCostUsd: sess.estimatedCostUsd,
     duration: formatDurationShort(durationMs),
   };
@@ -757,14 +761,6 @@ ${showFilter ? filterBarHtml(sources) : ''}
   </div>
 </div>
 
-<!-- Tool Usage -->
-<div class="section">
-  <h2>Tool Usage</h2>
-  <div class="no-data" style="padding:1.5rem">
-    <p>Detailed tool usage analytics coming soon.</p>
-  </div>
-</div>
-
 <!-- Session Anomalies -->
 ${anomaliesSectionHtml(anomalies, sentiment)}
 
@@ -978,9 +974,17 @@ document.addEventListener('keydown', function(e) {
 // Public API
 // ---------------------------------------------------------------------------
 
-export function renderReport(date: string, result: AnalysisResult, outputPath: string): void {
+/**
+ * Render the analysis report to an HTML file.
+ *
+ * @param dateLabel  Human-readable label for the report header
+ *                   (e.g. "2026-06-11", "Jun 5–11, 2026", "June 2026")
+ * @param result     Full analysis result
+ * @param outputPath File path to write the HTML to
+ */
+export function renderReport(dateLabel: string, result: AnalysisResult, outputPath: string): void {
   const css = loadCSS();
-  const html = generateHtml(date, result, css);
+  const html = generateHtml(dateLabel, result, css);
 
   const dir = path.dirname(outputPath);
   if (!fs.existsSync(dir)) {

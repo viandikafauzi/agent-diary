@@ -18,6 +18,17 @@ npx agent-diary --date 2026-06-11
 # Analyze only specific sources
 npx agent-diary --sources hermes,claude
 
+# Rolling windows (7, 30, 365 days)
+npx agent-diary --range week
+npx agent-diary --date 2026-06-11 --range month
+
+# Calendar month (by name or YYYY-MM)
+npx agent-diary --range June
+npx agent-diary --range 2026-05
+
+# Calendar year
+npx agent-diary --range 2025
+
 # Custom output path
 npx agent-diary --date 2026-06-11 --output my-report.html
 ```
@@ -61,36 +72,41 @@ Sources are auto-detected. If a CLI isn't installed, its parser is silently skip
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
-| `--date` | `-d` | today | Target date in YYYY-MM-DD format |
+| `--date` | `-d` | today | Anchor date in YYYY-MM-DD format. Used with `--range`. |
+| `--range` | `-r` | — | Date range mode. One of: `week`, `month`, `year`, `<month-name>`, `YYYY-MM`, `YYYY`. |
 | `--sources` | `-s` | all detected | Comma-separated list: hermes,pi,claude,opencode |
-| `--output` | `-o` | `output/diary-YYYY-MM-DD.html` | Custom output path |
+| `--output` | `-o` | `diary-<label>.html` | Custom output path. Default: `diary-YYYY-MM-DD.html` (single day) or `diary-range-<value>.html` (range). |
 | `--help` | `-h` | — | Show usage |
 
 ## Project Layout
 
 ```
 agent-diary/
-├── src/                    # TypeScript source
-│   ├── index.ts            # Entry point (#!/usr/bin/env node)
-│   ├── cli.ts              # CLI parsing + pipeline orchestration
-│   ├── types.ts            # All interfaces (Session, Message, AnalysisResult)
-│   ├── parsers/            # One parser per source (1:1 mapping)
-│   │   ├── detector.ts     # Auto-detect installed CLIs
-│   │   ├── hermes.ts       # SQLite reader
-│   │   ├── pi.ts           # JSONL reader
-│   │   ├── claude.ts       # JSONL reader
-│   │   └── opencode.ts     # SQLite reader
-│   ├── analyzers/          # Three analysis passes
-│   │   ├── lang_utils.ts   # Language detection + pattern tables (EN, ID, KZ)
-│   │   ├── sentiment.ts    # Polarity scoring
-│   │   ├── tone.ts         # Behavioral pattern matching
-│   │   └── interaction.ts  # Session quality metrics
+├── src/                       # TypeScript source
+│   ├── index.ts               # Entry point (#!/usr/bin/env node)
+│   ├── cli.ts                 # CLI parsing + pipeline orchestration
+│   ├── date-utils.ts          # Date-range resolution (--range, --date)
+│   ├── types.ts               # All interfaces (Session, Message, AnalysisResult, DateRange)
+│   ├── utils/                 # Shared utilities
+│   │   └── pricing.ts         # Model pricing tables & cost estimation
+│   ├── parsers/               # One parser per source (1:1 mapping)
+│   │   ├── detector.ts        # Auto-detect installed CLIs
+│   │   ├── hermes.ts          # SQLite reader (accepts startMs, endMs)
+│   │   ├── pi.ts              # JSONL reader (accepts startMs, endMs)
+│   │   ├── claude.ts          # JSONL reader (accepts startMs, endMs)
+│   │   └── opencode.ts        # SQLite reader (accepts startMs, endMs)
+│   ├── analyzers/             # Three analysis passes
+│   │   ├── lang_utils.ts      # Language detection + pattern tables (EN, ID, KZ)
+│   │   ├── sentiment.ts       # Polarity scoring
+│   │   ├── tone.ts            # Behavioral pattern matching
+│   │   └── interaction.ts     # Session quality metrics
 │   └── reporters/
-│       └── renderer.ts     # HTML generation
+│       └── renderer.ts        # HTML generation
 ├── templates/
-│   └── report.html         # HTML template with dark theme CSS
-├── CONTEXT.md              # Domain glossary and rules
-├── AGENTS.md               # Guide for AI coding agents
+│   └── report.html            # HTML template with dark theme CSS
+├── CONTEXT.md                 # Domain glossary and rules
+├── AGENTS.md                  # Guide for AI coding agents
+├── PRICING.md                 # Pricing documentation & cost estimation details
 ├── package.json
 └── tsconfig.json
 ```
@@ -111,6 +127,10 @@ node dist/index.js --date 2026-06-11
 npm run dev
 ```
 
+## Cost Estimation
+
+Cost estimation supports **Claude** (via Anthropic pricing table) and **OpenCode Go** (per-token rates for Go subscription models). Every parser prefers native cost data from its own CLI, then falls back to the pricing table based on the session's model name and token counts. See [PRICING.md](PRICING.md) for details.
+
 ## Architecture Decisions
 
 See [CONTEXT.md](CONTEXT.md) for the domain glossary and [AGENTS.md](AGENTS.md) for architecture details and conventions.
@@ -118,6 +138,8 @@ See [CONTEXT.md](CONTEXT.md) for the domain glossary and [AGENTS.md](AGENTS.md) 
 Key decisions:
 - **1:1 source-to-parser mapping** — each AI CLI gets exactly one parser
 - **Session** is the canonical term (not "Conversation")
+- **Parser signature** — all parsers accept `(startMs: number, endMs: number)` for millisecond-precision time windows
+- **Date ranges** — `resolveDateRange()` in `date-utils.ts` converts CLI flags to a `DateRange`; all timestamps computed in local time
 - **No Python dependency** — full TypeScript rewrite from the original Python implementation
 - **Self-contained HTML** — no external CSS, JS, or font dependencies
 

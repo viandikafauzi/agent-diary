@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import type { Session, Message } from "../types.js";
+import { estimateSessionCost } from "../utils/pricing.js";
 
 function findJsonlFiles(dir: string): string[] {
   const results: string[] = [];
@@ -37,11 +38,15 @@ function parseTimestamp(ts: unknown): Date | null {
   return null;
 }
 
-export function parsePi(dateStr: string): Session[] {
+/**
+ * Parse Pi sessions within a millisecond-precision time window.
+ *
+ * @param startMs  Start of the window (inclusive, epoch ms)
+ * @param endMs    End of the window (inclusive, epoch ms)
+ */
+export function parsePi(startMs: number, endMs: number): Session[] {
   try {
-    const startTimestamp = new Date(dateStr + "T00:00:00").getTime();
-    const endTimestamp = new Date(dateStr + "T23:59:59").getTime();
-    if (isNaN(startTimestamp) || isNaN(endTimestamp)) return [];
+    if (isNaN(startMs) || isNaN(endMs)) return [];
 
     const sessionsDir = path.join(os.homedir(), ".pi", "agent", "sessions");
     if (!fs.existsSync(sessionsDir)) return [];
@@ -86,7 +91,7 @@ export function parsePi(dateStr: string): Session[] {
         if (!sessionTimestamp || events.length === 0) continue;
 
         const sessionTime = sessionTimestamp.getTime();
-        if (sessionTime < startTimestamp || sessionTime > endTimestamp) continue;
+        if (sessionTime < startMs || sessionTime > endMs) continue;
 
         const messages: Message[] = [];
         let tokensInput = 0;
@@ -169,6 +174,14 @@ export function parsePi(dateStr: string): Session[] {
         // Total input = non-cached input + final cached context size
         const totalInput = tokensInput + lastCacheRead;
 
+        const estimatedCostUsd = estimateSessionCost({
+          nativeCostUsd: sessionCost > 0 ? sessionCost : null,
+          model,
+          inputTokens: tokensInput,
+          outputTokens: tokensOutput,
+          cachedReadTokens: lastCacheRead,
+        });
+
         if (!sessionTitle) {
           const firstUserMsg = messages.find((m) => m.role === "user");
           if (firstUserMsg) {
@@ -193,10 +206,11 @@ export function parsePi(dateStr: string): Session[] {
           messages,
           messageCount: messages.length,
           toolCallCount,
-          estimatedCostUsd: sessionCost,
+          estimatedCostUsd,
           totalTokens: totalInput + tokensOutput,
           tokensInput: totalInput,
           tokensOutput,
+          tokensCachedRead: lastCacheRead,
         });
       } catch {
         // skip files that fail to parse
